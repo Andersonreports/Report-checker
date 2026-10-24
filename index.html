@@ -142,21 +142,60 @@ header.hero p {
 }
 .summary-list {
   list-style: none;
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   padding: 0;
   display: grid;
+  gap: 10px;
+}
+.field-card {
+  background: var(--surface-sunken);
+  border-radius: 9px;
+  padding: 10px 12px 12px;
+}
+.field-card-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 8px;
+}
+.field-card-chips {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
-.summary-list li {
-  font-size: 13px;
-  background: var(--surface-sunken);
+.field-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 150px;
+  flex: 1 1 150px;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 7px;
-  padding: 8px 10px;
-  line-height: 1.5;
+  padding: 6px 10px;
 }
-.summary-list .field-name { font-weight: 600; }
-.summary-list .diff { color: var(--mismatch); font-weight: 600; }
-.summary-list .src-val { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+.field-chip .chip-source {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  font-family: "IBM Plex Mono", monospace;
+}
+.field-chip .chip-value {
+  font-size: 13px;
+  font-family: "IBM Plex Mono", monospace;
+  word-break: break-word;
+}
+.field-chip.is-ok { border-color: var(--match); background: var(--match-bg); }
+.field-chip.is-ok .chip-value { color: var(--match); }
+.field-chip.is-diff { border-color: var(--mismatch); background: var(--mismatch-bg); }
+.field-chip.is-diff .chip-value { color: var(--mismatch); font-weight: 600; }
+.field-chip.is-missing { border-style: dashed; border-color: var(--mismatch); background: var(--mismatch-bg); }
+.field-chip.is-missing .chip-value { color: var(--mismatch); font-style: italic; }
+.field-card-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--mismatch);
+}
 
 /* Source cards */
 .sources {
@@ -581,13 +620,23 @@ header.hero p {
       list.hidden = false;
       mismatches.forEach(function (r) {
         var li = document.createElement("li");
-        var parts = SOURCES.map(function (src) {
+        li.className = "field-card";
+
+        var chipsHtml = SOURCES.map(function (src) {
           var val = r.raw[src.key].trim();
           var isDiff = r.differing.indexOf(src.label) !== -1;
-          return (isDiff ? '<span class="diff">' : '<span class="src-val">') + src.label + ": " + escapeHtml(val) + "</span>";
-        }).join(" &nbsp;·&nbsp; ");
-        li.innerHTML = '<span class="field-name">' + r.field.label + "</span> — " + parts +
-          '. <span class="diff">Differs on: ' + r.differing.join(", ") + "</span>";
+          return '<div class="field-chip' + (isDiff ? " is-diff" : " is-ok") + '">' +
+            '<span class="chip-source">' + src.label + "</span>" +
+            '<span class="chip-value">' + escapeHtml(val) + "</span>" +
+            "</div>";
+        }).join("");
+
+        var noteHtml = r.differing.length === SOURCES.length
+          ? '<p class="field-card-note">All three sources disagree with each other.</p>'
+          : '<p class="field-card-note">' + r.differing.join(", ") + " doesn't match the other two.</p>";
+
+        li.innerHTML = '<div class="field-card-title">' + r.field.label + "</div>" +
+          '<div class="field-card-chips">' + chipsHtml + "</div>" + noteHtml;
         list.appendChild(li);
       });
       return;
@@ -605,7 +654,20 @@ header.hero p {
       list.hidden = false;
       incompletes.forEach(function (r) {
         var li = document.createElement("li");
-        li.innerHTML = '<span class="field-name">' + r.field.label + "</span> — missing from: " + r.missing.join(", ");
+        li.className = "field-card";
+
+        var chipsHtml = SOURCES.map(function (src) {
+          var val = r.raw[src.key].trim();
+          var isMissing = val === "";
+          return '<div class="field-chip' + (isMissing ? " is-missing" : "") + '">' +
+            '<span class="chip-source">' + src.label + "</span>" +
+            '<span class="chip-value">' + (isMissing ? "Not read yet" : escapeHtml(val)) + "</span>" +
+            "</div>";
+        }).join("");
+
+        li.innerHTML = '<div class="field-card-title">' + r.field.label + "</div>" +
+          '<div class="field-card-chips">' + chipsHtml + "</div>" +
+          '<p class="field-card-note">Missing from: ' + r.missing.join(", ") + "</p>";
         list.appendChild(li);
       });
       return;
