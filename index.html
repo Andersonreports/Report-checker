@@ -695,12 +695,10 @@ header.hero p {
     list.hidden = true;
 
     if (touched.length === 0) {
-      summary.classList.add("state-empty");
-      icon.innerHTML = ICONS.empty;
-      headline.textContent = "Nothing entered yet";
-      sub.textContent = "Fill in a field on any two sources to start checking.";
+      summary.hidden = true;
       return;
     }
+    summary.hidden = false;
 
     if (mismatches.length > 0) {
       summary.classList.add("state-mismatch");
