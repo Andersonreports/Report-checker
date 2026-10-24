@@ -497,7 +497,7 @@ header.hero p {
       } else if (result.status === "mismatch") {
         cls = result.differing.indexOf(src.label) !== -1 ? "mismatch" : "match";
       } else if (result.status === "incomplete") {
-        cls = result.missing.indexOf(src.label) !== -1 ? "incomplete" : "empty";
+        cls = "mismatch";
       }
       document.getElementById(field.key + "-dot-" + src.key).className = "dot dot-" + cls;
       document.getElementById(field.key + "-row-" + src.key).className = "field-row row-" + cls;
