@@ -471,7 +471,7 @@ header.hero p {
   ];
 
   var COMMON_FIELDS = [
-    { key: "name", label: "Patient Name", placeholder: "e.g. Rajesh Kumar", normalize: normalizeText },
+    { key: "name", label: "Patient Name", placeholder: "e.g. Rajesh Kumar", normalize: normalizeText, fuzzyPrefix: true },
     { key: "age", label: "Age", placeholder: "e.g. 34", normalize: normalizeAge },
     { key: "gender", label: "Gender", placeholder: "e.g. Male", normalize: normalizeGender },
     { key: "uhid", label: "Patient ID / UHID", placeholder: "e.g. AD-00123456", normalize: normalizeId },
@@ -581,6 +581,37 @@ header.hero p {
     });
   }
 
+  // Exact equality by default. Fields with fuzzyPrefix (currently just
+  // name) also accept one value being a truncated prefix of the other —
+  // OCR on a wrapped table cell can cut a name short ("MRS.PAVITHRA" instead
+  // of "MRS.PAVITHRA PAULRAJ"), and that's an OCR artifact, not a real
+  // identity mismatch. Min length 6 keeps this from matching on a trivial
+  // shared prefix like a title alone.
+  function valuesCompatible(field, a, b) {
+    if (a === b) return true;
+    if (!field.fuzzyPrefix) return false;
+    var sa = a.replace(/[^a-z0-9]/g, "");
+    var sb = b.replace(/[^a-z0-9]/g, "");
+    if (!sa || !sb) return false;
+    var shorter = sa.length <= sb.length ? sa : sb;
+    var longer = sa.length <= sb.length ? sb : sa;
+    return shorter.length >= 6 && longer.indexOf(shorter) === 0;
+  }
+
+  function groupCompatibleValues(field, values) {
+    var groups = [];
+    values.forEach(function (v, i) {
+      var g = groups.filter(function (grp) { return valuesCompatible(field, grp.rep, v); })[0];
+      if (g) {
+        g.indices.push(i);
+        if (v.length > g.rep.length) g.rep = v;
+      } else {
+        groups.push({ rep: v, indices: [i] });
+      }
+    });
+    return groups;
+  }
+
   function evaluateField(field) {
     var raw = {};
     SOURCES.forEach(function (src) {
@@ -599,22 +630,21 @@ header.hero p {
     if (filledSources.length < 3) {
       var missing = SOURCES.filter(function (src) { return raw[src.key].trim() === ""; }).map(function (s) { return s.label; });
       var filledValues = filledSources.map(function (src) { return normalized[src.key]; });
-      var filledAgree = filledValues.every(function (v) { return v === filledValues[0]; });
+      var filledAgree = valuesCompatible(field, filledValues[0], filledValues[1]);
       return { field: field, status: "incomplete", raw: raw, missing: missing, filledAgree: filledAgree };
     }
 
     var values = SOURCES.map(function (src) { return normalized[src.key]; });
-    var allMatch = values.every(function (v) { return v === values[0]; });
+    var groups = groupCompatibleValues(field, values);
 
-    if (allMatch) {
+    if (groups.length === 1) {
       return { field: field, status: "match", raw: raw };
     }
 
-    // group sources by normalized value to find which one(s) are the odd ones out
-    var counts = {};
-    values.forEach(function (v) { counts[v] = (counts[v] || 0) + 1; });
-    var maxCount = Math.max.apply(null, Object.keys(counts).map(function (k) { return counts[k]; }));
-    var differing = SOURCES.filter(function (src) { return counts[normalized[src.key]] < maxCount; });
+    // the largest group is "the majority"; everyone else is flagged
+    var maxCount = Math.max.apply(null, groups.map(function (g) { return g.indices.length; }));
+    var majority = groups.filter(function (g) { return g.indices.length === maxCount; })[0];
+    var differing = SOURCES.filter(function (src, i) { return majority.indices.indexOf(i) === -1; });
     if (differing.length === 0) differing = SOURCES.slice();
 
     return { field: field, status: "mismatch", raw: raw, differing: differing.map(function (s) { return s.label; }) };
@@ -879,6 +909,17 @@ header.hero p {
     };
   }
 
+  // Last-resort name match for a table row where the cell wrapped and cut
+  // the name short in the OCR text (e.g. "MRS.PAVITHRA" with "PAULRAJ" lost
+  // to a line break). Captures whatever title + capitalized word(s) are
+  // actually there; the name field's fuzzyPrefix comparison means a
+  // genuinely truncated value like this still matches the full name
+  // elsewhere instead of raising a false mismatch.
+  function findTitledName(text) {
+    var m = text.match(/\b((?:MRS?|MS|DR)\.?\s*[A-Z][A-Za-z.]*(?:\s+[A-Z][A-Za-z.']*){0,4})(?=\s*(?:\d|\n|$))/);
+    return m ? m[1].trim() : "";
+  }
+
   function extractLisTableRow(text) {
     var out = {};
     var dateMatch = text.match(/(\d{1,2}[-\/][A-Za-z]{3,9}[-\/]\d{2,4}\s+\d{1,2}:\d{2}\s*[AP]M)([\s\S]{0,500})/i);
@@ -948,6 +989,7 @@ header.hero p {
     if (!out.sampleId) out.sampleId = findFallbackNumericId(t);
     if (!out.doctor) out.doctor = findDuplicatedPhrase(t);
     if (!out.collectionDate) out.collectionDate = findPrintedTimestamp(t);
+    if (!out.name) out.name = findTitledName(t);
 
     // PGT-A-specific fields (only populated when the template includes them;
     // harmless no-ops otherwise since nothing reads these keys in that case).
