@@ -217,13 +217,10 @@ header.hero p {
 
 /* Upload + OCR */
 .ocr-note {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-dim);
-  background: var(--accent-soft);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin: 14px 0 0;
+  padding: 10px 16px 2px;
+  margin: 0;
 }
 .upload-row { background: var(--accent-soft); }
 .upload-cell { display: flex; flex-direction: column; gap: 6px; }
@@ -325,8 +322,7 @@ header.hero p {
   <header class="hero">
     <p class="eyebrow">Pre-dispatch verification</p>
     <h1>Patient Detail Match</h1>
-    <p>Enter the patient details exactly as they appear on the Report, the Freedom LIS screenshot, and the TRF. Each field is checked live and flagged the moment any source disagrees.</p>
-    <p class="ocr-note">Upload a file per source to auto-read it with on-device OCR (Tesseract), or type values in directly. OCR reads printed text well but often misreads handwriting — always check the extracted text panel and fix any field before trusting a match.</p>
+    <p>Upload or type the patient details from the Report, Freedom, and TRF — any mismatch is flagged instantly.</p>
   </header>
 
   <section id="summary" class="summary state-empty" aria-live="polite">
@@ -389,6 +385,7 @@ header.hero p {
       </div>
       <div class="row-status"></div>
     </div>
+    <p class="ocr-note">OCR reads printed text well, handwriting less reliably — check the extracted text and fix fields as needed.</p>
     <div id="fieldRows"></div>
   </section>
 
