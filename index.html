@@ -1,0 +1,534 @@
+<title>Patient Detail Match</title>
+<style>
+/* Layout: a column per source (Report / Freedom / TRF), one row per field, a status column that
+   turns green/red/amber live as values are typed, with a summary banner above. */
+:root {
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --surface-sunken: #eceff1;
+  --border: #d7dee1;
+  --text: #15232a;
+  --text-dim: #5b6b72;
+  --accent: #0e7c86;
+  --accent-soft: #e2f3f2;
+  --match: #1a7d43;
+  --match-bg: #e5f5e9;
+  --mismatch: #b3281e;
+  --mismatch-bg: #fcebe9;
+  --incomplete: #9a6600;
+  --incomplete-bg: #fbf1dd;
+  --empty: #7c8a90;
+  --empty-bg: #eef1f2;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181b;
+    --surface: #182226;
+    --surface-sunken: #0d1416;
+    --border: #2b383d;
+    --text: #e7eef0;
+    --text-dim: #93a4aa;
+    --accent: #4fc3c9;
+    --accent-soft: #132d2d;
+    --match: #5fd98a;
+    --match-bg: #113322;
+    --mismatch: #ff8a80;
+    --mismatch-bg: #3a1613;
+    --incomplete: #f2c04b;
+    --incomplete-bg: #352a0c;
+    --empty: #8b999e;
+    --empty-bg: #1c2529;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181b;
+  --surface: #182226;
+  --surface-sunken: #0d1416;
+  --border: #2b383d;
+  --text: #e7eef0;
+  --text-dim: #93a4aa;
+  --accent: #4fc3c9;
+  --accent-soft: #132d2d;
+  --match: #5fd98a;
+  --match-bg: #113322;
+  --mismatch: #ff8a80;
+  --mismatch-bg: #3a1613;
+  --incomplete: #f2c04b;
+  --incomplete-bg: #352a0c;
+  --empty: #8b999e;
+  --empty-bg: #1c2529;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "IBM Plex Sans", -apple-system, sans-serif;
+}
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+header.hero {
+  margin-bottom: 20px;
+}
+header.hero .eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 6px;
+}
+header.hero h1 {
+  font-size: clamp(22px, 4vw, 30px);
+  font-weight: 700;
+  margin: 0 0 6px;
+  text-wrap: balance;
+}
+header.hero p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 14px;
+  max-width: 62ch;
+  line-height: 1.5;
+}
+
+/* Summary banner */
+.summary {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--empty);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 22px;
+  transition: border-color 0.15s ease;
+}
+.summary.state-match { border-left-color: var(--match); }
+.summary.state-mismatch { border-left-color: var(--mismatch); }
+.summary.state-incomplete { border-left-color: var(--incomplete); }
+.summary-icon { flex: none; width: 24px; height: 24px; margin-top: 1px; }
+.summary-icon svg { width: 100%; height: 100%; }
+.summary-body { min-width: 0; flex: 1; }
+.summary-headline {
+  font-weight: 600;
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+.summary-sub {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.summary-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.summary-list li {
+  font-size: 13px;
+  background: var(--surface-sunken);
+  border-radius: 7px;
+  padding: 8px 10px;
+  line-height: 1.5;
+}
+.summary-list .field-name { font-weight: 600; }
+.summary-list .diff { color: var(--mismatch); font-weight: 600; }
+.summary-list .src-val { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+
+/* Comparison table */
+.compare {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.grid-header, .row {
+  display: grid;
+  grid-template-columns: 150px repeat(3, 1fr) 118px;
+  gap: 10px;
+  padding: 12px 16px;
+  align-items: center;
+}
+.grid-header {
+  background: var(--surface-sunken);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.row {
+  border-top: 1px solid var(--border);
+}
+.row-label {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.row-input input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13.5px;
+  font-family: inherit;
+}
+.row-input input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.source-tag { display: none; }
+.row-status { display: flex; justify-content: flex-start; }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: var(--empty-bg);
+  color: var(--empty);
+}
+.badge svg { width: 13px; height: 13px; flex: none; }
+.badge.match { background: var(--match-bg); color: var(--match); }
+.badge.mismatch { background: var(--mismatch-bg); color: var(--mismatch); }
+.badge.incomplete { background: var(--incomplete-bg); color: var(--incomplete); }
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+#clearBtn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+#clearBtn:hover { color: var(--mismatch); border-color: var(--mismatch); }
+
+@media (max-width: 700px) {
+  .grid-header { display: none; }
+  .row {
+    display: block;
+    padding: 14px 16px;
+  }
+  .row-label { margin-bottom: 10px; font-size: 14px; }
+  .row-input { margin-bottom: 8px; }
+  .source-tag {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    font-family: "IBM Plex Mono", monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .row-status { margin-top: 4px; }
+}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<div class="page">
+  <header class="hero">
+    <p class="eyebrow">Pre-dispatch verification</p>
+    <h1>Patient Detail Match</h1>
+    <p>Enter the patient details exactly as they appear on the Report, the Freedom LIS screenshot, and the TRF. Each field is checked live and flagged the moment any source disagrees.</p>
+  </header>
+
+  <section id="summary" class="summary state-empty" aria-live="polite">
+    <span class="summary-icon" id="summaryIcon"></span>
+    <div class="summary-body">
+      <p class="summary-headline" id="summaryHeadline">Nothing entered yet</p>
+      <p class="summary-sub" id="summarySub">Fill in a field on any two sources to start checking.</p>
+      <ul class="summary-list" id="summaryList" hidden></ul>
+    </div>
+  </section>
+
+  <section class="compare">
+    <div class="grid-header">
+      <div>Field</div>
+      <div>Report</div>
+      <div>Freedom screenshot</div>
+      <div>TRF</div>
+      <div>Status</div>
+    </div>
+    <div id="fieldRows"></div>
+  </section>
+
+  <div class="actions">
+    <button id="clearBtn" type="button">Clear all fields</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  function pad(n) { n = String(n); return n.length < 2 ? "0" + n : n; }
+  function monthIndex(str) {
+    var months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+    var idx = months.indexOf(str.slice(0, 3).toLowerCase());
+    return idx >= 0 ? String(idx + 1) : null;
+  }
+
+  function normalizeText(str) {
+    return str.trim().toLowerCase().replace(/\s+/g, " ");
+  }
+  function normalizeAge(str) {
+    var s = str.trim().toLowerCase();
+    if (!s) return "";
+    var m = s.match(/\d+/);
+    return m ? m[0] : s;
+  }
+  function normalizeGender(str) {
+    var s = str.trim().toLowerCase();
+    if (!s) return "";
+    if (s[0] === "m") return "male";
+    if (s[0] === "f") return "female";
+    return s;
+  }
+  function normalizeDoctor(str) {
+    return str.trim().toLowerCase().replace(/^dr\.?\s*/, "").replace(/\s+/g, " ");
+  }
+  function normalizeId(str) {
+    return str.trim().toLowerCase().replace(/[\s-]+/g, "");
+  }
+  function normalizeDate(str) {
+    var s = str.trim();
+    if (!s) return "";
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return m[1] + "-" + pad(m[2]) + "-" + pad(m[3]);
+
+    m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if (m) {
+      var d1 = m[1], mo1 = m[2], y1 = m[3];
+      if (y1.length === 2) y1 = (parseInt(y1, 10) > 50 ? "19" : "20") + y1;
+      return y1 + "-" + pad(mo1) + "-" + pad(d1);
+    }
+
+    m = s.match(/^(\d{1,2})[\s\-]+([A-Za-z]{3,9})[\s\-,]+(\d{2,4})$/);
+    if (m) {
+      var mo2 = monthIndex(m[2]);
+      if (mo2) {
+        var y2 = m[3];
+        if (y2.length === 2) y2 = (parseInt(y2, 10) > 50 ? "19" : "20") + y2;
+        return y2 + "-" + pad(mo2) + "-" + pad(m[1]);
+      }
+    }
+
+    m = s.match(/^([A-Za-z]{3,9})[\s\-,]+(\d{1,2}),?[\s\-,]+(\d{2,4})$/);
+    if (m) {
+      var mo3 = monthIndex(m[1]);
+      if (mo3) {
+        var y3 = m[3];
+        if (y3.length === 2) y3 = (parseInt(y3, 10) > 50 ? "19" : "20") + y3;
+        return y3 + "-" + pad(mo3) + "-" + pad(m[2]);
+      }
+    }
+
+    return s.toLowerCase().replace(/\s+/g, " ");
+  }
+
+  var SOURCES = [
+    { key: "report", label: "Report" },
+    { key: "freedom", label: "Freedom screenshot" },
+    { key: "trf", label: "TRF" }
+  ];
+
+  var FIELDS = [
+    { key: "name", label: "Patient Name", placeholder: "e.g. Rajesh Kumar", normalize: normalizeText },
+    { key: "age", label: "Age", placeholder: "e.g. 34", normalize: normalizeAge },
+    { key: "gender", label: "Gender", placeholder: "e.g. Male", normalize: normalizeGender },
+    { key: "uhid", label: "Patient ID / UHID", placeholder: "e.g. AD-00123456", normalize: normalizeId },
+    { key: "doctor", label: "Referring Doctor", placeholder: "e.g. Dr. S. Mehta", normalize: normalizeDoctor },
+    { key: "sampleId", label: "Sample / Barcode No.", placeholder: "e.g. 7741098", normalize: normalizeId },
+    { key: "collectionDate", label: "Collection Date", placeholder: "e.g. 21/10/2026", normalize: normalizeDate }
+  ];
+
+  var ICONS = {
+    match: '<svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.3 12 13 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    mismatch: '<svg viewBox="0 0 16 16" fill="none"><path d="M8 1.5 15 14H1L8 1.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6.2V9.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.6" r="0.9" fill="currentColor"/></svg>',
+    incomplete: '<svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.3" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v3.3l2.2 1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    empty: '<svg viewBox="0 0 16 16" fill="none"><path d="M4 8h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
+  };
+
+  var BADGE_TEXT = { match: "Matched", mismatch: "Mismatch", incomplete: "Incomplete", empty: "—" };
+
+  var rowsEl = document.getElementById("fieldRows");
+  FIELDS.forEach(function (field) {
+    var row = document.createElement("div");
+    row.className = "row";
+    row.setAttribute("data-field", field.key);
+
+    var html = '<div class="row-label">' + field.label + "</div>";
+    SOURCES.forEach(function (src) {
+      var prefillValue = field.prefill ? (field.prefill[src.key] || "") : "";
+      html +=
+        '<div class="row-input">' +
+        '<span class="source-tag">' + src.label + "</span>" +
+        '<input type="text" id="' + field.key + "-" + src.key + '" ' +
+        'data-field="' + field.key + '" data-source="' + src.key + '" ' +
+        'value="' + escapeHtml(prefillValue) + '" ' +
+        'placeholder="' + field.placeholder + '" autocomplete="off">' +
+        "</div>";
+    });
+    html += '<div class="row-status"><span class="badge" id="' + field.key + '-status">' + ICONS.empty + "<span>—</span></span></div>";
+    row.innerHTML = html;
+    rowsEl.appendChild(row);
+  });
+
+  function setBadge(fieldKey, status) {
+    var el = document.getElementById(fieldKey + "-status");
+    el.className = "badge " + status;
+    el.innerHTML = ICONS[status] + "<span>" + BADGE_TEXT[status] + "</span>";
+  }
+
+  function evaluateField(field) {
+    var raw = {};
+    SOURCES.forEach(function (src) {
+      raw[src.key] = document.getElementById(field.key + "-" + src.key).value;
+    });
+    var filledSources = SOURCES.filter(function (src) { return raw[src.key].trim() !== ""; });
+
+    if (filledSources.length === 0) {
+      return { field: field, status: "empty", raw: raw };
+    }
+    if (filledSources.length < 3) {
+      var missing = SOURCES.filter(function (src) { return raw[src.key].trim() === ""; }).map(function (s) { return s.label; });
+      return { field: field, status: "incomplete", raw: raw, missing: missing };
+    }
+
+    var normalized = {};
+    SOURCES.forEach(function (src) { normalized[src.key] = field.normalize(raw[src.key]); });
+    var values = SOURCES.map(function (src) { return normalized[src.key]; });
+    var allMatch = values.every(function (v) { return v === values[0]; });
+
+    if (allMatch) {
+      return { field: field, status: "match", raw: raw };
+    }
+
+    // group sources by normalized value to find which one(s) are the odd ones out
+    var counts = {};
+    values.forEach(function (v) { counts[v] = (counts[v] || 0) + 1; });
+    var maxCount = Math.max.apply(null, Object.keys(counts).map(function (k) { return counts[k]; }));
+    var differing = SOURCES.filter(function (src) { return counts[normalized[src.key]] < maxCount; });
+    if (differing.length === 0) differing = SOURCES.slice();
+
+    return { field: field, status: "mismatch", raw: raw, differing: differing.map(function (s) { return s.label; }) };
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function updateAll() {
+    var results = FIELDS.map(evaluateField);
+    results.forEach(function (r) { setBadge(r.field.key, r.status); });
+
+    var mismatches = results.filter(function (r) { return r.status === "mismatch"; });
+    var incompletes = results.filter(function (r) { return r.status === "incomplete"; });
+    var matches = results.filter(function (r) { return r.status === "match"; });
+    var touched = results.filter(function (r) { return r.status !== "empty"; });
+
+    var summary = document.getElementById("summary");
+    var icon = document.getElementById("summaryIcon");
+    var headline = document.getElementById("summaryHeadline");
+    var sub = document.getElementById("summarySub");
+    var list = document.getElementById("summaryList");
+
+    summary.className = "summary";
+    list.innerHTML = "";
+    list.hidden = true;
+
+    if (touched.length === 0) {
+      summary.classList.add("state-empty");
+      icon.innerHTML = ICONS.empty;
+      headline.textContent = "Nothing entered yet";
+      sub.textContent = "Fill in a field on any two sources to start checking.";
+      return;
+    }
+
+    if (mismatches.length > 0) {
+      summary.classList.add("state-mismatch");
+      icon.innerHTML = ICONS.mismatch;
+      headline.textContent = mismatches.length === 1
+        ? "Unmatched — 1 field does not agree across sources"
+        : "Unmatched — " + mismatches.length + " fields do not agree across sources";
+      sub.textContent = "Review the field(s) below before dispatching the report.";
+      list.hidden = false;
+      mismatches.forEach(function (r) {
+        var li = document.createElement("li");
+        var parts = SOURCES.map(function (src) {
+          var val = r.raw[src.key].trim();
+          var isDiff = r.differing.indexOf(src.label) !== -1;
+          return (isDiff ? '<span class="diff">' : '<span class="src-val">') + src.label + ": " + escapeHtml(val) + "</span>";
+        }).join(" &nbsp;·&nbsp; ");
+        li.innerHTML = '<span class="field-name">' + r.field.label + "</span> — " + parts +
+          '. <span class="diff">Differs on: ' + r.differing.join(", ") + "</span>";
+        list.appendChild(li);
+      });
+      return;
+    }
+
+    if (incompletes.length > 0) {
+      summary.classList.add("state-incomplete");
+      icon.innerHTML = ICONS.incomplete;
+      headline.textContent = incompletes.length === 1
+        ? "In progress — 1 field still needs all three sources"
+        : "In progress — " + incompletes.length + " fields still need all three sources";
+      sub.textContent = matches.length > 0
+        ? matches.length + " field(s) already match. Fill in the rest to finish the check."
+        : "Add the missing value(s) to compare.";
+      list.hidden = false;
+      incompletes.forEach(function (r) {
+        var li = document.createElement("li");
+        li.innerHTML = '<span class="field-name">' + r.field.label + "</span> — missing from: " + r.missing.join(", ");
+        list.appendChild(li);
+      });
+      return;
+    }
+
+    summary.classList.add("state-match");
+    icon.innerHTML = ICONS.match;
+    headline.textContent = "Matched — all " + matches.length + " fields agree across Report, Freedom and TRF";
+    sub.textContent = "Safe to proceed.";
+  }
+
+  rowsEl.addEventListener("input", function (e) {
+    if (e.target && e.target.tagName === "INPUT") updateAll();
+  });
+
+  document.getElementById("clearBtn").addEventListener("click", function () {
+    var inputs = rowsEl.querySelectorAll("input");
+    inputs.forEach(function (inp) { inp.value = ""; });
+    updateAll();
+    inputs[0].focus();
+  });
+
+  updateAll();
+})();
+</script>
