@@ -215,6 +215,70 @@ header.hero p {
 .badge.mismatch { background: var(--mismatch-bg); color: var(--mismatch); }
 .badge.incomplete { background: var(--incomplete-bg); color: var(--incomplete); }
 
+/* Upload + OCR */
+.ocr-note {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 14px 0 0;
+}
+.upload-row { background: var(--accent-soft); }
+.upload-cell { display: flex; flex-direction: column; gap: 6px; }
+.upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--surface);
+  border: 1px dashed var(--accent);
+  border-radius: 7px;
+  padding: 7px 10px;
+  cursor: pointer;
+  width: fit-content;
+}
+.upload-btn:hover { background: var(--surface-sunken); }
+.upload-btn svg { width: 14px; height: 14px; flex: none; }
+.upload-cell input[type="file"] { display: none; }
+.upload-status {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 14px;
+}
+.upload-status.is-busy { color: var(--accent); }
+.upload-status.is-error { color: var(--mismatch); }
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.ocr-details { font-size: 11.5px; }
+.ocr-details summary { cursor: pointer; color: var(--text-dim); user-select: none; }
+.ocr-text {
+  white-space: pre-wrap;
+  background: var(--surface-sunken);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 6px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  color: var(--text);
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;
@@ -262,6 +326,7 @@ header.hero p {
     <p class="eyebrow">Pre-dispatch verification</p>
     <h1>Patient Detail Match</h1>
     <p>Enter the patient details exactly as they appear on the Report, the Freedom LIS screenshot, and the TRF. Each field is checked live and flagged the moment any source disagrees.</p>
+    <p class="ocr-note">Upload a file per source to auto-read it with on-device OCR (Tesseract), or type values in directly. OCR reads printed text well but often misreads handwriting — always check the extracted text panel and fix any field before trusting a match.</p>
   </header>
 
   <section id="summary" class="summary state-empty" aria-live="polite">
@@ -281,6 +346,49 @@ header.hero p {
       <div>TRF</div>
       <div>Status</div>
     </div>
+    <div class="row upload-row" id="uploadRow">
+      <div class="row-label">Upload source</div>
+      <div class="row-input upload-cell" data-source="report">
+        <span class="source-tag">Report</span>
+        <label class="upload-btn" for="file-report">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3 5 6M8 3l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v1.5A1.5 1.5 0 0 0 4.5 14h7A1.5 1.5 0 0 0 13 12.5V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Upload image or PDF</span>
+        </label>
+        <input type="file" id="file-report" accept="image/*,application/pdf">
+        <div class="upload-status" id="status-report"></div>
+        <details class="ocr-details" id="details-report" hidden>
+          <summary>View extracted text</summary>
+          <pre class="ocr-text" id="ocrtext-report"></pre>
+        </details>
+      </div>
+      <div class="row-input upload-cell" data-source="freedom">
+        <span class="source-tag">Freedom screenshot</span>
+        <label class="upload-btn" for="file-freedom">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3 5 6M8 3l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v1.5A1.5 1.5 0 0 0 4.5 14h7A1.5 1.5 0 0 0 13 12.5V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Upload image or PDF</span>
+        </label>
+        <input type="file" id="file-freedom" accept="image/*,application/pdf">
+        <div class="upload-status" id="status-freedom"></div>
+        <details class="ocr-details" id="details-freedom" hidden>
+          <summary>View extracted text</summary>
+          <pre class="ocr-text" id="ocrtext-freedom"></pre>
+        </details>
+      </div>
+      <div class="row-input upload-cell" data-source="trf">
+        <span class="source-tag">TRF</span>
+        <label class="upload-btn" for="file-trf">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3 5 6M8 3l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v1.5A1.5 1.5 0 0 0 4.5 14h7A1.5 1.5 0 0 0 13 12.5V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Upload image or PDF</span>
+        </label>
+        <input type="file" id="file-trf" accept="image/*,application/pdf">
+        <div class="upload-status" id="status-trf"></div>
+        <details class="ocr-details" id="details-trf" hidden>
+          <summary>View extracted text</summary>
+          <pre class="ocr-text" id="ocrtext-trf"></pre>
+        </details>
+      </div>
+      <div class="row-status"></div>
+    </div>
     <div id="fieldRows"></div>
   </section>
 
@@ -289,6 +397,13 @@ header.hero p {
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+</script>
 <script>
 (function () {
   "use strict";
@@ -532,8 +647,139 @@ header.hero p {
   document.getElementById("clearBtn").addEventListener("click", function () {
     var inputs = rowsEl.querySelectorAll("input");
     inputs.forEach(function (inp) { inp.value = ""; });
+    SOURCES.forEach(function (src) {
+      var statusEl = document.getElementById("status-" + src.key);
+      var detailsEl = document.getElementById("details-" + src.key);
+      var fileInput = document.getElementById("file-" + src.key);
+      statusEl.className = "upload-status";
+      statusEl.innerHTML = "";
+      detailsEl.hidden = true;
+      fileInput.value = "";
+    });
     updateAll();
     inputs[0].focus();
+  });
+
+  // ---- OCR (Tesseract.js, on-device, no API key) ----
+  var ocrWorkerPromise = null;
+  function getOcrWorker() {
+    if (!ocrWorkerPromise) ocrWorkerPromise = Tesseract.createWorker("eng");
+    return ocrWorkerPromise;
+  }
+
+  function renderPdfFirstPageToCanvas(file) {
+    return file.arrayBuffer().then(function (buf) {
+      return pdfjsLib.getDocument({ data: buf }).promise;
+    }).then(function (pdf) {
+      return pdf.getPage(1);
+    }).then(function (page) {
+      var viewport = page.getViewport({ scale: 2.2 });
+      var canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      var ctx = canvas.getContext("2d");
+      return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function () {
+        return canvas;
+      });
+    });
+  }
+
+  function ocrFile(file) {
+    var inputPromise = file.type === "application/pdf"
+      ? renderPdfFirstPageToCanvas(file)
+      : Promise.resolve(file);
+    return Promise.all([inputPromise, getOcrWorker()]).then(function (results) {
+      var input = results[0];
+      var worker = results[1];
+      return worker.recognize(input);
+    }).then(function (result) {
+      return result.data.text || "";
+    });
+  }
+
+  function cleanLine(s) {
+    return (s || "").replace(/[|_]+/g, " ").replace(/\s{2,}/g, " ").trim();
+  }
+
+  function firstMatch(text, patterns) {
+    for (var i = 0; i < patterns.length; i++) {
+      var m = text.match(patterns[i]);
+      if (m && m[1]) return m[1].trim();
+    }
+    return "";
+  }
+
+  var STOP = "(?=\\s{2,}\\S|$|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Report\\s*Date|Collection|Received|UHID)\\b)";
+
+  function parseOcrText(text) {
+    var t = (text || "").replace(/\r/g, "");
+    var out = {};
+
+    out.name = firstMatch(t, [
+      new RegExp("(?:patient\\s*name|full\\s*name)\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
+    ]);
+    out.age = firstMatch(t, [
+      /age\s*[:\-]?\s*([0-9]{1,3}\s*(?:years?|yrs?|y|months?|mon?s?|m|days?|d)\b[^\n,]*)/i,
+      /age\s*[:\-]?\s*([0-9]{1,3})\b/i
+    ]);
+    out.gender = firstMatch(t, [
+      /(?:gender|sex)\s*[:\-]?\s*(female|male|\bF\b|\bM\b)/i
+    ]);
+    out.uhid = firstMatch(t, [
+      /\bPIN\s*[:\-]?\s*([A-Za-z0-9]+)/i,
+      /\bUHID\s*[:\-]?\s*([A-Za-z0-9\-]+)/i
+    ]);
+    out.doctor = firstMatch(t, [
+      new RegExp("(?:referring\\s*clinician|referring\\s*doctor|clinical\\s*name|ref(?:erred)?\\s*by)\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
+    ]);
+    out.sampleId = firstMatch(t, [
+      /\b(?:sample\s*number|sample\s*no\.?|lab\s*no\.?|sin\s*no\.?)\s*[:\-]?\s*([A-Za-z0-9\-]+)/i
+    ]);
+    out.collectionDate = firstMatch(t, [
+      /(?:sample\s*collection\s*date|collection\s*date|entry\s*date\s*time?)\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i,
+      /(?:sample\s*collection\s*date|collection\s*date)\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
+    ]);
+
+    Object.keys(out).forEach(function (k) { out[k] = cleanLine(out[k]); });
+    return out;
+  }
+
+  SOURCES.forEach(function (src) {
+    var fileInput = document.getElementById("file-" + src.key);
+    var statusEl = document.getElementById("status-" + src.key);
+    var detailsEl = document.getElementById("details-" + src.key);
+    var ocrTextEl = document.getElementById("ocrtext-" + src.key);
+
+    fileInput.addEventListener("change", function () {
+      var file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+
+      statusEl.className = "upload-status is-busy";
+      statusEl.innerHTML = '<span class="spinner"></span><span>Reading ' + escapeHtml(file.name) + '…</span>';
+      detailsEl.hidden = true;
+
+      ocrFile(file).then(function (text) {
+        ocrTextEl.textContent = text.trim() || "(no text found)";
+        detailsEl.hidden = false;
+
+        var parsed = parseOcrText(text);
+        var filledCount = 0;
+        FIELDS.forEach(function (field) {
+          var value = parsed[field.key];
+          if (value) {
+            document.getElementById(field.key + "-" + src.key).value = value;
+            filledCount++;
+          }
+        });
+
+        statusEl.className = "upload-status";
+        statusEl.innerHTML = "<span>Scanned " + escapeHtml(file.name) + " — filled " + filledCount + " of " + FIELDS.length + " field(s). Check against the text below.</span>";
+        updateAll();
+      }).catch(function (err) {
+        statusEl.className = "upload-status is-error";
+        statusEl.textContent = "Could not read this file: " + (err && err.message ? err.message : err);
+      });
+    });
   });
 
   updateAll();
