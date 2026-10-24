@@ -564,7 +564,13 @@ header.hero p {
       } else if (result.status === "mismatch") {
         cls = result.differing.indexOf(src.label) !== -1 ? "mismatch" : "match";
       } else if (result.status === "incomplete") {
-        cls = "mismatch";
+        if (result.missing.indexOf(src.label) !== -1) {
+          cls = "mismatch";
+        } else {
+          // Present in 2 of 3 sources: green if those two agree with each
+          // other, red if even the two we have already disagree.
+          cls = result.filledAgree ? "match" : "mismatch";
+        }
       }
       document.getElementById(field.key + "-dot-" + src.key).className = "dot dot-" + cls;
       document.getElementById(field.key + "-row-" + src.key).className = "field-row row-" + cls;
@@ -583,13 +589,16 @@ header.hero p {
     if (filledSources.length <= 1) {
       return { field: field, status: "empty", raw: raw };
     }
-    if (filledSources.length < 3) {
-      var missing = SOURCES.filter(function (src) { return raw[src.key].trim() === ""; }).map(function (s) { return s.label; });
-      return { field: field, status: "incomplete", raw: raw, missing: missing };
-    }
-
     var normalized = {};
     SOURCES.forEach(function (src) { normalized[src.key] = field.normalize(raw[src.key]); });
+
+    if (filledSources.length < 3) {
+      var missing = SOURCES.filter(function (src) { return raw[src.key].trim() === ""; }).map(function (s) { return s.label; });
+      var filledValues = filledSources.map(function (src) { return normalized[src.key]; });
+      var filledAgree = filledValues.every(function (v) { return v === filledValues[0]; });
+      return { field: field, status: "incomplete", raw: raw, missing: missing, filledAgree: filledAgree };
+    }
+
     var values = SOURCES.map(function (src) { return normalized[src.key]; });
     var allMatch = values.every(function (v) { return v === values[0]; });
 
