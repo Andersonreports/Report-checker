@@ -152,78 +152,38 @@ header.hero p {
 .summary-list .diff { color: var(--mismatch); font-weight: 600; }
 .summary-list .src-val { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
 
-/* Comparison table */
-.compare {
+/* Source cards */
+.sources {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.source-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-}
-.grid-header, .row {
-  display: grid;
-  grid-template-columns: 150px repeat(3, 1fr) 118px;
-  gap: 10px;
-  padding: 12px 16px;
-  align-items: center;
-}
-.grid-header {
-  background: var(--surface-sunken);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-}
-.row {
-  border-top: 1px solid var(--border);
-}
-.row-label {
-  font-weight: 600;
-  font-size: 13.5px;
-}
-.row-input input {
-  width: 100%;
   min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 13.5px;
-  font-family: inherit;
 }
-.row-input input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.source-card-header {
+  padding: 14px 16px;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.source-tag { display: none; }
-.row-status { display: flex; justify-content: flex-start; }
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 5px 9px;
-  border-radius: 999px;
-  white-space: nowrap;
-  background: var(--empty-bg);
-  color: var(--empty);
-}
-.badge svg { width: 13px; height: 13px; flex: none; }
-.badge.match { background: var(--match-bg); color: var(--match); }
-.badge.mismatch { background: var(--mismatch-bg); color: var(--mismatch); }
-.badge.incomplete { background: var(--incomplete-bg); color: var(--incomplete); }
-
-/* Upload + OCR */
-.ocr-note {
-  font-size: 12px;
-  color: var(--text-dim);
-  padding: 10px 16px 2px;
+.source-card-header h2 {
   margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: "IBM Plex Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
 }
-.upload-row { background: var(--accent-soft); }
-.upload-cell { display: flex; flex-direction: column; gap: 6px; }
 .upload-btn {
   display: inline-flex;
   align-items: center;
@@ -238,9 +198,9 @@ header.hero p {
   cursor: pointer;
   width: fit-content;
 }
-.upload-btn:hover { background: var(--surface-sunken); }
+.upload-btn:hover { background: var(--accent-soft); }
 .upload-btn svg { width: 14px; height: 14px; flex: none; }
-.upload-cell input[type="file"] { display: none; }
+.source-card-header input[type="file"] { display: none; }
 .upload-status {
   font-size: 11.5px;
   color: var(--text-dim);
@@ -261,6 +221,61 @@ header.hero p {
   flex: none;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.source-fields { padding: 4px 16px; flex: 1; }
+.field-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 6px;
+  margin: 0 -6px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+.field-row:last-child { border-bottom: none; }
+.field-row.row-match { background: var(--match-bg); }
+.field-row.row-mismatch { background: var(--mismatch-bg); }
+.field-row.row-incomplete { background: var(--incomplete-bg); }
+.field-row .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex: none;
+  background: var(--empty);
+}
+.dot-match { background: var(--match); }
+.dot-mismatch { background: var(--mismatch); }
+.dot-incomplete { background: var(--incomplete); }
+.dot-empty { background: var(--empty); }
+.field-body { flex: 1; min-width: 0; }
+.field-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  font-family: "IBM Plex Mono", monospace;
+}
+.field-value {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 2px 0;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font-size: 13.5px;
+  font-family: inherit;
+}
+.field-value:hover, .field-value:focus {
+  border-bottom-color: var(--border);
+  outline: none;
+}
+.field-value::placeholder { color: var(--text-dim); opacity: 0.55; }
+
+.source-card-footer { padding: 2px 16px 14px; }
 .ocr-details { font-size: 11.5px; }
 .ocr-details summary { cursor: pointer; color: var(--text-dim); user-select: none; }
 .ocr-text {
@@ -294,24 +309,8 @@ header.hero p {
 }
 #clearBtn:hover { color: var(--mismatch); border-color: var(--mismatch); }
 
-@media (max-width: 700px) {
-  .grid-header { display: none; }
-  .row {
-    display: block;
-    padding: 14px 16px;
-  }
-  .row-label { margin-bottom: 10px; font-size: 14px; }
-  .row-input { margin-bottom: 8px; }
-  .source-tag {
-    display: block;
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-bottom: 4px;
-    font-family: "IBM Plex Mono", monospace;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .row-status { margin-top: 4px; }
+@media (max-width: 860px) {
+  .sources { grid-template-columns: 1fr; }
 }
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -334,60 +333,7 @@ header.hero p {
     </div>
   </section>
 
-  <section class="compare">
-    <div class="grid-header">
-      <div>Field</div>
-      <div>Report</div>
-      <div>Freedom screenshot</div>
-      <div>TRF</div>
-      <div>Status</div>
-    </div>
-    <div class="row upload-row" id="uploadRow">
-      <div class="row-label">Upload source</div>
-      <div class="row-input upload-cell" data-source="report">
-        <span class="source-tag">Report</span>
-        <label class="upload-btn" for="file-report">
-          <svg viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3 5 6M8 3l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v1.5A1.5 1.5 0 0 0 4.5 14h7A1.5 1.5 0 0 0 13 12.5V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span>Upload image or PDF</span>
-        </label>
-        <input type="file" id="file-report" accept="image/*,application/pdf">
-        <div class="upload-status" id="status-report"></div>
-        <details class="ocr-details" id="details-report" hidden>
-          <summary>View extracted text</summary>
-          <pre class="ocr-text" id="ocrtext-report"></pre>
-        </details>
-      </div>
-      <div class="row-input upload-cell" data-source="freedom">
-        <span class="source-tag">Freedom screenshot</span>
-        <label class="upload-btn" for="file-freedom">
-          <svg viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3 5 6M8 3l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v1.5A1.5 1.5 0 0 0 4.5 14h7A1.5 1.5 0 0 0 13 12.5V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span>Upload image or PDF</span>
-        </label>
-        <input type="file" id="file-freedom" accept="image/*,application/pdf">
-        <div class="upload-status" id="status-freedom"></div>
-        <details class="ocr-details" id="details-freedom" hidden>
-          <summary>View extracted text</summary>
-          <pre class="ocr-text" id="ocrtext-freedom"></pre>
-        </details>
-      </div>
-      <div class="row-input upload-cell" data-source="trf">
-        <span class="source-tag">TRF</span>
-        <label class="upload-btn" for="file-trf">
-          <svg viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3 5 6M8 3l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v1.5A1.5 1.5 0 0 0 4.5 14h7A1.5 1.5 0 0 0 13 12.5V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span>Upload image or PDF</span>
-        </label>
-        <input type="file" id="file-trf" accept="image/*,application/pdf">
-        <div class="upload-status" id="status-trf"></div>
-        <details class="ocr-details" id="details-trf" hidden>
-          <summary>View extracted text</summary>
-          <pre class="ocr-text" id="ocrtext-trf"></pre>
-        </details>
-      </div>
-      <div class="row-status"></div>
-    </div>
-    <p class="ocr-note">OCR reads printed text well, handwriting less reliably — check the extracted text and fix fields as needed.</p>
-    <div id="fieldRows"></div>
-  </section>
+  <section class="sources" id="sourcesWrap"></section>
 
   <div class="actions">
     <button id="clearBtn" type="button">Clear all fields</button>
@@ -493,35 +439,63 @@ header.hero p {
     empty: '<svg viewBox="0 0 16 16" fill="none"><path d="M4 8h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
   };
 
-  var BADGE_TEXT = { match: "Matched", mismatch: "Mismatch", incomplete: "Incomplete", empty: "—" };
+  var UPLOAD_ICON = '<svg viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3 5 6M8 3l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v1.5A1.5 1.5 0 0 0 4.5 14h7A1.5 1.5 0 0 0 13 12.5V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-  var rowsEl = document.getElementById("fieldRows");
-  FIELDS.forEach(function (field) {
-    var row = document.createElement("div");
-    row.className = "row";
-    row.setAttribute("data-field", field.key);
+  var sourcesWrap = document.getElementById("sourcesWrap");
+  SOURCES.forEach(function (src) {
+    var card = document.createElement("div");
+    card.className = "source-card";
+    card.setAttribute("data-source", src.key);
 
-    var html = '<div class="row-label">' + field.label + "</div>";
-    SOURCES.forEach(function (src) {
-      var prefillValue = field.prefill ? (field.prefill[src.key] || "") : "";
-      html +=
-        '<div class="row-input">' +
-        '<span class="source-tag">' + src.label + "</span>" +
-        '<input type="text" id="' + field.key + "-" + src.key + '" ' +
+    var headerHtml =
+      '<div class="source-card-header">' +
+      "<h2>" + src.label + "</h2>" +
+      '<label class="upload-btn" for="file-' + src.key + '">' + UPLOAD_ICON + "<span>Upload image or PDF</span></label>" +
+      '<input type="file" id="file-' + src.key + '" accept="image/*,application/pdf">' +
+      '<div class="upload-status" id="status-' + src.key + '"></div>' +
+      "</div>";
+
+    var fieldsHtml = '<div class="source-fields">';
+    FIELDS.forEach(function (field) {
+      fieldsHtml +=
+        '<div class="field-row" id="' + field.key + "-row-" + src.key + '">' +
+        '<span class="dot" id="' + field.key + "-dot-" + src.key + '"></span>' +
+        '<div class="field-body">' +
+        '<div class="field-label">' + field.label + "</div>" +
+        '<input class="field-value" type="text" id="' + field.key + "-" + src.key + '" ' +
         'data-field="' + field.key + '" data-source="' + src.key + '" ' +
-        'value="' + escapeHtml(prefillValue) + '" ' +
         'placeholder="' + field.placeholder + '" autocomplete="off">' +
+        "</div>" +
         "</div>";
     });
-    html += '<div class="row-status"><span class="badge" id="' + field.key + '-status">' + ICONS.empty + "<span>—</span></span></div>";
-    row.innerHTML = html;
-    rowsEl.appendChild(row);
+    fieldsHtml += "</div>";
+
+    var footerHtml =
+      '<div class="source-card-footer">' +
+      '<details class="ocr-details" id="details-' + src.key + '" hidden>' +
+      "<summary>View extracted text</summary>" +
+      '<pre class="ocr-text" id="ocrtext-' + src.key + '"></pre>' +
+      "</details>" +
+      "</div>";
+
+    card.innerHTML = headerHtml + fieldsHtml + footerHtml;
+    sourcesWrap.appendChild(card);
   });
 
-  function setBadge(fieldKey, status) {
-    var el = document.getElementById(fieldKey + "-status");
-    el.className = "badge " + status;
-    el.innerHTML = ICONS[status] + "<span>" + BADGE_TEXT[status] + "</span>";
+  function setFieldStatusUI(result) {
+    var field = result.field;
+    SOURCES.forEach(function (src) {
+      var cls = "empty";
+      if (result.status === "match") {
+        cls = "match";
+      } else if (result.status === "mismatch") {
+        cls = result.differing.indexOf(src.label) !== -1 ? "mismatch" : "match";
+      } else if (result.status === "incomplete") {
+        cls = result.missing.indexOf(src.label) !== -1 ? "incomplete" : "empty";
+      }
+      document.getElementById(field.key + "-dot-" + src.key).className = "dot dot-" + cls;
+      document.getElementById(field.key + "-row-" + src.key).className = "field-row row-" + cls;
+    });
   }
 
   function evaluateField(field) {
@@ -566,7 +540,7 @@ header.hero p {
 
   function updateAll() {
     var results = FIELDS.map(evaluateField);
-    results.forEach(function (r) { setBadge(r.field.key, r.status); });
+    results.forEach(setFieldStatusUI);
 
     var mismatches = results.filter(function (r) { return r.status === "mismatch"; });
     var incompletes = results.filter(function (r) { return r.status === "incomplete"; });
@@ -637,12 +611,12 @@ header.hero p {
     sub.textContent = "Safe to proceed.";
   }
 
-  rowsEl.addEventListener("input", function (e) {
-    if (e.target && e.target.tagName === "INPUT") updateAll();
+  sourcesWrap.addEventListener("input", function (e) {
+    if (e.target && e.target.classList && e.target.classList.contains("field-value")) updateAll();
   });
 
   document.getElementById("clearBtn").addEventListener("click", function () {
-    var inputs = rowsEl.querySelectorAll("input");
+    var inputs = sourcesWrap.querySelectorAll("input.field-value");
     inputs.forEach(function (inp) { inp.value = ""; });
     SOURCES.forEach(function (src) {
       var statusEl = document.getElementById("status-" + src.key);
