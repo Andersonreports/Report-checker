@@ -638,12 +638,6 @@ header.hero p {
   });
 
   // ---- OCR (Tesseract.js, on-device, no API key) ----
-  var ocrWorkerPromise = null;
-  function getOcrWorker() {
-    if (!ocrWorkerPromise) ocrWorkerPromise = Tesseract.createWorker("eng");
-    return ocrWorkerPromise;
-  }
-
   function renderPdfFirstPageToCanvas(file) {
     return file.arrayBuffer().then(function (buf) {
       return pdfjsLib.getDocument({ data: buf }).promise;
@@ -665,10 +659,8 @@ header.hero p {
     var inputPromise = file.type === "application/pdf"
       ? renderPdfFirstPageToCanvas(file)
       : Promise.resolve(file);
-    return Promise.all([inputPromise, getOcrWorker()]).then(function (results) {
-      var input = results[0];
-      var worker = results[1];
-      return worker.recognize(input);
+    return inputPromise.then(function (input) {
+      return Tesseract.recognize(input, "eng");
     }).then(function (result) {
       return result.data.text || "";
     });
