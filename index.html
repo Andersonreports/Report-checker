@@ -157,7 +157,7 @@ header.hero p {
 .summary {
   display: flex;
   gap: 14px;
-  align-items: flex-start;
+  align-items: center;
   background: var(--surface);
   border: 1px solid var(--border);
   border-left: 5px solid var(--empty);
@@ -172,72 +172,10 @@ header.hero p {
 .summary.state-incomplete { border-left-color: var(--incomplete); }
 .summary-icon { flex: none; width: 24px; height: 24px; margin-top: 1px; }
 .summary-icon svg { width: 100%; height: 100%; }
-.summary-body { min-width: 0; flex: 1; }
 .summary-headline {
   font-weight: 600;
   font-size: 15px;
-  margin: 0 0 4px;
-}
-.summary-sub {
   margin: 0;
-  color: var(--text-dim);
-  font-size: 13px;
-}
-.summary-list {
-  list-style: none;
-  margin: 12px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-}
-.field-card {
-  background: var(--surface-sunken);
-  border-radius: 9px;
-  padding: 10px 12px 12px;
-}
-.field-card-title {
-  font-weight: 600;
-  font-size: 13.5px;
-  margin-bottom: 8px;
-}
-.field-card-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.field-chip {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 150px;
-  flex: 1 1 150px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 6px 10px;
-}
-.field-chip .chip-source {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-dim);
-  font-family: "IBM Plex Mono", monospace;
-}
-.field-chip .chip-value {
-  font-size: 13px;
-  font-family: "IBM Plex Mono", monospace;
-  word-break: break-word;
-}
-.field-chip.is-ok { border-color: var(--match); background: var(--match-bg); }
-.field-chip.is-ok .chip-value { color: var(--match); }
-.field-chip.is-diff { border-color: var(--mismatch); background: var(--mismatch-bg); }
-.field-chip.is-diff .chip-value { color: var(--mismatch); font-weight: 600; }
-.field-chip.is-missing { border-style: dashed; border-color: var(--mismatch); background: var(--mismatch-bg); }
-.field-chip.is-missing .chip-value { color: var(--mismatch); font-style: italic; }
-.field-card-note {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--mismatch);
 }
 
 /* Source cards */
@@ -425,13 +363,9 @@ header.hero p {
     <span class="template-hint" id="templateHint"></span>
   </div>
 
-  <section id="summary" class="summary state-empty" aria-live="polite">
+  <section id="summary" class="summary state-empty" aria-live="polite" hidden>
     <span class="summary-icon" id="summaryIcon"></span>
-    <div class="summary-body">
-      <p class="summary-headline" id="summaryHeadline">Nothing entered yet</p>
-      <p class="summary-sub" id="summarySub">Fill in a field on any two sources to start checking.</p>
-      <ul class="summary-list" id="summaryList" hidden></ul>
-    </div>
+    <p class="summary-headline" id="summaryHeadline"></p>
   </section>
 
   <section class="sources" id="sourcesWrap"></section>
@@ -683,92 +617,36 @@ header.hero p {
 
     var mismatches = results.filter(function (r) { return r.status === "mismatch"; });
     var incompletes = results.filter(function (r) { return r.status === "incomplete"; });
-    var matches = results.filter(function (r) { return r.status === "match"; });
     var touched = results.filter(function (r) { return r.status !== "empty"; });
 
     var summary = document.getElementById("summary");
     var icon = document.getElementById("summaryIcon");
     var headline = document.getElementById("summaryHeadline");
-    var sub = document.getElementById("summarySub");
-    var list = document.getElementById("summaryList");
-
-    summary.className = "summary";
-    list.innerHTML = "";
-    list.hidden = true;
 
     if (touched.length === 0) {
       summary.hidden = true;
       return;
     }
     summary.hidden = false;
+    summary.className = "summary";
 
     if (mismatches.length > 0) {
       summary.classList.add("state-mismatch");
       icon.innerHTML = ICONS.mismatch;
-      headline.textContent = mismatches.length === 1
-        ? "Unmatched — 1 field does not agree across sources"
-        : "Unmatched — " + mismatches.length + " fields do not agree across sources";
-      sub.textContent = "Review the field(s) below before dispatching the report.";
-      list.hidden = false;
-      mismatches.forEach(function (r) {
-        var li = document.createElement("li");
-        li.className = "field-card";
-
-        var chipsHtml = SOURCES.map(function (src) {
-          var val = r.raw[src.key].trim();
-          var isDiff = r.differing.indexOf(src.label) !== -1;
-          return '<div class="field-chip' + (isDiff ? " is-diff" : " is-ok") + '">' +
-            '<span class="chip-source">' + src.label + "</span>" +
-            '<span class="chip-value">' + escapeHtml(val) + "</span>" +
-            "</div>";
-        }).join("");
-
-        var noteHtml = r.differing.length === SOURCES.length
-          ? '<p class="field-card-note">All three sources disagree with each other.</p>'
-          : '<p class="field-card-note">' + r.differing.join(", ") + " doesn't match the other two.</p>";
-
-        li.innerHTML = '<div class="field-card-title">' + r.field.label + "</div>" +
-          '<div class="field-card-chips">' + chipsHtml + "</div>" + noteHtml;
-        list.appendChild(li);
-      });
+      headline.textContent = "Not a match — check the red field(s) below";
       return;
     }
 
     if (incompletes.length > 0) {
       summary.classList.add("state-incomplete");
       icon.innerHTML = ICONS.incomplete;
-      headline.textContent = incompletes.length === 1
-        ? "In progress — 1 field still needs all three sources"
-        : "In progress — " + incompletes.length + " fields still need all three sources";
-      sub.textContent = matches.length > 0
-        ? matches.length + " field(s) already match. Fill in the rest to finish the check."
-        : "Add the missing value(s) to compare.";
-      list.hidden = false;
-      incompletes.forEach(function (r) {
-        var li = document.createElement("li");
-        li.className = "field-card";
-
-        var chipsHtml = SOURCES.map(function (src) {
-          var val = r.raw[src.key].trim();
-          var isMissing = val === "";
-          return '<div class="field-chip' + (isMissing ? " is-missing" : "") + '">' +
-            '<span class="chip-source">' + src.label + "</span>" +
-            '<span class="chip-value">' + (isMissing ? "Not read yet" : escapeHtml(val)) + "</span>" +
-            "</div>";
-        }).join("");
-
-        li.innerHTML = '<div class="field-card-title">' + r.field.label + "</div>" +
-          '<div class="field-card-chips">' + chipsHtml + "</div>" +
-          '<p class="field-card-note">Missing from: ' + r.missing.join(", ") + "</p>";
-        list.appendChild(li);
-      });
+      headline.textContent = "Not a match yet — still waiting on some sources";
       return;
     }
 
     summary.classList.add("state-match");
     icon.innerHTML = ICONS.match;
-    headline.textContent = "Matched — all " + matches.length + " fields agree across Report, Freedom and TRF";
-    sub.textContent = "Safe to proceed.";
+    headline.textContent = "Match — all fields agree across Report, Freedom and TRF";
   }
 
   sourcesWrap.addEventListener("input", function (e) {
