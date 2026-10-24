@@ -74,11 +74,17 @@ body {
   font-family: "IBM Plex Sans", -apple-system, sans-serif;
 }
 .page {
-  max-width: 980px;
+  max-width: 1600px;
   margin: 0 auto;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-block: 28px 56px;
+  padding-left: max(40px, env(safe-area-inset-left, 0px));
+  padding-right: max(40px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 56px;
+}
+@media (max-width: 860px) {
+  .page {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
 }
 header.hero {
   margin-bottom: 20px;
@@ -156,7 +162,7 @@ header.hero p {
 .sources {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: 24px;
 }
 .source-card {
   background: var(--surface);
@@ -168,12 +174,12 @@ header.hero p {
   min-width: 0;
 }
 .source-card-header {
-  padding: 14px 16px;
+  padding: 18px 20px;
   background: var(--surface-sunken);
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .source-card-header h2 {
   margin: 0;
@@ -222,13 +228,13 @@ header.hero p {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.source-fields { padding: 4px 16px; flex: 1; }
+.source-fields { padding: 6px 20px; flex: 1; }
 .field-row {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
-  padding: 10px 6px;
-  margin: 0 -6px;
+  gap: 10px;
+  padding: 13px 8px;
+  margin: 0 -8px;
   border-bottom: 1px solid var(--border);
   border-radius: 6px;
   transition: background 0.15s ease;
@@ -251,7 +257,7 @@ header.hero p {
 .dot-empty { background: var(--empty); }
 .field-body { flex: 1; min-width: 0; }
 .field-label {
-  font-size: 10.5px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-dim);
@@ -260,13 +266,13 @@ header.hero p {
 .field-value {
   display: block;
   width: 100%;
-  margin-top: 2px;
+  margin-top: 3px;
   padding: 2px 0;
   border: none;
   border-bottom: 1px solid transparent;
   background: transparent;
   color: var(--text);
-  font-size: 13.5px;
+  font-size: 14.5px;
   font-family: inherit;
 }
 .field-value:hover, .field-value:focus {
@@ -275,7 +281,7 @@ header.hero p {
 }
 .field-value::placeholder { color: var(--text-dim); opacity: 0.55; }
 
-.source-card-footer { padding: 2px 16px 14px; }
+.source-card-footer { padding: 2px 20px 16px; }
 .ocr-details { font-size: 11.5px; }
 .ocr-details summary { cursor: pointer; color: var(--text-dim); user-select: none; }
 .ocr-text {
