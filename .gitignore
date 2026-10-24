@@ -1,0 +1,9 @@
+# This repo is a public GitHub Pages site (index.html only).
+# Never commit patient documents dropped into this folder for reference.
+*.pdf
+*.doc
+*.docx
+*.jpg
+*.jpeg
+*.png
+*.heic

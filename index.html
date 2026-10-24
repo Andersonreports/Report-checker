@@ -111,6 +111,46 @@ header.hero p {
   line-height: 1.5;
 }
 
+/* Template picker */
+.template-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 22px;
+}
+.template-bar label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  font-family: "IBM Plex Mono", monospace;
+}
+.template-bar select {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.template-bar select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.template-hint {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
 /* Summary banner */
 .summary {
   display: flex;
@@ -369,6 +409,17 @@ header.hero p {
     <p>Upload or type the patient details from the Report, Freedom, and TRF — any mismatch is flagged instantly.</p>
   </header>
 
+  <div class="template-bar">
+    <label for="templateSelect">Test template</label>
+    <select id="templateSelect">
+      <option value="common">General (common fields only)</option>
+      <option value="pgta">PGT-A</option>
+      <option value="karyotyping">Karyotyping</option>
+      <option value="nipt">NIPT</option>
+    </select>
+    <span class="template-hint" id="templateHint"></span>
+  </div>
+
   <section id="summary" class="summary state-empty" aria-live="polite">
     <span class="summary-icon" id="summaryIcon"></span>
     <div class="summary-body">
@@ -425,6 +476,13 @@ header.hero p {
   function normalizeId(str) {
     return str.trim().toLowerCase().replace(/[\s-]+/g, "");
   }
+  function normalizeIdList(str) {
+    return str.split(",")
+      .map(function (s) { return s.trim().toLowerCase().replace(/\s+/g, ""); })
+      .filter(Boolean)
+      .sort()
+      .join(",");
+  }
   function normalizeDate(str) {
     var s = str.trim();
     if (!s) return "";
@@ -467,7 +525,7 @@ header.hero p {
     { key: "trf", label: "TRF" }
   ];
 
-  var FIELDS = [
+  var COMMON_FIELDS = [
     { key: "name", label: "Patient Name", placeholder: "e.g. Rajesh Kumar", normalize: normalizeText },
     { key: "age", label: "Age", placeholder: "e.g. 34", normalize: normalizeAge },
     { key: "gender", label: "Gender", placeholder: "e.g. Male", normalize: normalizeGender },
@@ -476,6 +534,31 @@ header.hero p {
     { key: "sampleId", label: "Sample / Barcode No.", placeholder: "e.g. 7741098", normalize: normalizeId },
     { key: "collectionDate", label: "Collection Date", placeholder: "e.g. 21/10/2026", normalize: normalizeDate }
   ];
+
+  // Extra fields layered on top of COMMON_FIELDS for a given test template.
+  // Populated one template at a time — only PGT-A so far.
+  var TEMPLATE_EXTRA_FIELDS = {
+    common: [],
+    pgta: [
+      { key: "partnerName", label: "Partner's Name", placeholder: "e.g. Mr. Suresh Kumar", normalize: normalizeText },
+      { key: "specimenType", label: "Specimen Type", placeholder: "e.g. Day 5 Trophectoderm Biopsy", normalize: normalizeText },
+      { key: "biopsyDate", label: "Biopsy Date", placeholder: "e.g. 27-08-2026", normalize: normalizeDate },
+      { key: "receiptDate", label: "Sample Receipt Date", placeholder: "e.g. 01-09-2026", normalize: normalizeDate },
+      { key: "biopsyBy", label: "Biopsy Performed By", placeholder: "e.g. Vidyashree K. Teji", normalize: normalizeText },
+      { key: "embryoIds", label: "Embryo ID(s)", placeholder: "e.g. PS1, PS2, PS3", normalize: normalizeIdList }
+    ],
+    karyotyping: [],
+    nipt: []
+  };
+
+  var TEMPLATE_HINTS = {
+    common: "Checks the 7 common patient/sample fields only.",
+    pgta: "Adds partner's name, specimen type, biopsy date, sample receipt date, biopsy performer and embryo ID(s).",
+    karyotyping: "No extra fields added yet — common fields only for now.",
+    nipt: "No extra fields added yet — common fields only for now."
+  };
+
+  var FIELDS = COMMON_FIELDS.slice();
 
   var ICONS = {
     match: '<svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.3 12 13 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -487,45 +570,49 @@ header.hero p {
   var UPLOAD_ICON = '<svg viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3 5 6M8 3l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v1.5A1.5 1.5 0 0 0 4.5 14h7A1.5 1.5 0 0 0 13 12.5V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   var sourcesWrap = document.getElementById("sourcesWrap");
-  SOURCES.forEach(function (src) {
-    var card = document.createElement("div");
-    card.className = "source-card";
-    card.setAttribute("data-source", src.key);
 
-    var headerHtml =
-      '<div class="source-card-header">' +
-      "<h2>" + src.label + "</h2>" +
-      '<label class="upload-btn" for="file-' + src.key + '">' + UPLOAD_ICON + "<span>Upload image or PDF</span></label>" +
-      '<input type="file" id="file-' + src.key + '" accept="image/*,application/pdf">' +
-      '<div class="upload-status" id="status-' + src.key + '"></div>' +
-      "</div>";
+  function buildSourceCards() {
+    sourcesWrap.innerHTML = "";
+    SOURCES.forEach(function (src) {
+      var card = document.createElement("div");
+      card.className = "source-card";
+      card.setAttribute("data-source", src.key);
 
-    var fieldsHtml = '<div class="source-fields">';
-    FIELDS.forEach(function (field) {
-      fieldsHtml +=
-        '<div class="field-row" id="' + field.key + "-row-" + src.key + '">' +
-        '<span class="dot" id="' + field.key + "-dot-" + src.key + '"></span>' +
-        '<div class="field-body">' +
-        '<div class="field-label">' + field.label + "</div>" +
-        '<input class="field-value" type="text" id="' + field.key + "-" + src.key + '" ' +
-        'data-field="' + field.key + '" data-source="' + src.key + '" ' +
-        'placeholder="' + field.placeholder + '" autocomplete="off">' +
-        "</div>" +
+      var headerHtml =
+        '<div class="source-card-header">' +
+        "<h2>" + src.label + "</h2>" +
+        '<label class="upload-btn" for="file-' + src.key + '">' + UPLOAD_ICON + "<span>Upload image or PDF</span></label>" +
+        '<input type="file" id="file-' + src.key + '" accept="image/*,application/pdf">' +
+        '<div class="upload-status" id="status-' + src.key + '"></div>' +
         "</div>";
+
+      var fieldsHtml = '<div class="source-fields">';
+      FIELDS.forEach(function (field) {
+        fieldsHtml +=
+          '<div class="field-row" id="' + field.key + "-row-" + src.key + '">' +
+          '<span class="dot" id="' + field.key + "-dot-" + src.key + '"></span>' +
+          '<div class="field-body">' +
+          '<div class="field-label">' + field.label + "</div>" +
+          '<input class="field-value" type="text" id="' + field.key + "-" + src.key + '" ' +
+          'data-field="' + field.key + '" data-source="' + src.key + '" ' +
+          'placeholder="' + field.placeholder + '" autocomplete="off">' +
+          "</div>" +
+          "</div>";
+      });
+      fieldsHtml += "</div>";
+
+      var footerHtml =
+        '<div class="source-card-footer">' +
+        '<details class="ocr-details" id="details-' + src.key + '" hidden>' +
+        "<summary>View extracted text</summary>" +
+        '<pre class="ocr-text" id="ocrtext-' + src.key + '"></pre>' +
+        "</details>" +
+        "</div>";
+
+      card.innerHTML = headerHtml + fieldsHtml + footerHtml;
+      sourcesWrap.appendChild(card);
     });
-    fieldsHtml += "</div>";
-
-    var footerHtml =
-      '<div class="source-card-footer">' +
-      '<details class="ocr-details" id="details-' + src.key + '" hidden>' +
-      "<summary>View extracted text</summary>" +
-      '<pre class="ocr-text" id="ocrtext-' + src.key + '"></pre>' +
-      "</details>" +
-      "</div>";
-
-    card.innerHTML = headerHtml + fieldsHtml + footerHtml;
-    sourcesWrap.appendChild(card);
-  });
+  }
 
   function setFieldStatusUI(result) {
     var field = result.field;
@@ -789,7 +876,9 @@ header.hero p {
   // Anderson's own PIN format (e.g. ADK0000006221) appears on report headers
   // and TRF barcodes without always having a "PIN:"/"UHID:" label next to it.
   function findLabPin(text) {
-    var m = text.match(/\bADK\s*0*\d{4,10}\b/i);
+    // Anderson's PIN format varies by department (ADK for genetics, ACO for
+    // andrology/embryology, etc.) — a 2-4 letter prefix plus a long number.
+    var m = text.match(/\b[A-Z]{2,4}\s*0*\d{6,12}\b/);
     return m ? m[0].replace(/\s+/g, "").toUpperCase() : "";
   }
 
@@ -837,7 +926,7 @@ header.hero p {
     return out;
   }
 
-  var STOP = "(?=\\n|$|\\s{2,}\\S|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Report\\s*Date|Collection|Received|UHID)\\b)";
+  var STOP = "(?=\\n|$|\\s{2,}\\S|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Report\\s*Date|Collection|Received|Biopsy\\s*(?:Date|Performed)|UHID)\\b)";
 
   function parseOcrText(text) {
     var t = (text || "").replace(/\r/g, "");
@@ -879,6 +968,43 @@ header.hero p {
     if (!out.doctor) out.doctor = findDuplicatedPhrase(t);
     if (!out.collectionDate) out.collectionDate = findPrintedTimestamp(t);
 
+    // PGT-A-specific fields (only populated when the template includes them;
+    // harmless no-ops otherwise since nothing reads these keys in that case).
+    out.specimenType = firstMatch(t, [
+      new RegExp("specimen\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
+    ]);
+    out.biopsyDate = firstMatch(t, [
+      /biopsy\s*date\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i,
+      /biopsy\s*date\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
+    ]);
+    out.receiptDate = firstMatch(t, [
+      /(?:sample\s*)?receipt\s*date\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i,
+      /(?:sample\s*)?receipt\s*date\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
+    ]);
+    out.biopsyBy = firstValidMatch(t, [
+      new RegExp("biopsy\\s*performed\\s*by\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
+    ], looksLikeRealValue);
+    out.partnerName = firstMatch(t, [
+      /\b(?:W\/O|S\/O|D\/O|C\/O)\s*[:\-]?\s*(?:MR\.?|MRS\.?|MS\.?|DR\.?)?\s*([^\n]+)/i
+    ]);
+    out.embryoIds = (function () {
+      var ids = [];
+      var re = /\bEMBRYO\s*[:\-]?\s*([A-Z]{1,4}\d{1,3})\b/gi;
+      var m;
+      while ((m = re.exec(t)) !== null) {
+        var id = m[1].toUpperCase();
+        if (ids.indexOf(id) === -1) ids.push(id);
+      }
+      if (ids.length === 0) {
+        re = /\b[1-9]\d?\s+([A-Z]{1,3}\d{1,3})\b/g;
+        while ((m = re.exec(t)) !== null) {
+          var id2 = m[1].toUpperCase();
+          if (ids.indexOf(id2) === -1) ids.push(id2);
+        }
+      }
+      return ids.join(", ");
+    })();
+
     // A label that sits on its own line (common on forms) can get swept into
     // the capture when the separator crosses the line break, so strip it
     // back off if it's still sitting at the front of the value.
@@ -890,45 +1016,61 @@ header.hero p {
     return out;
   }
 
-  SOURCES.forEach(function (src) {
-    var fileInput = document.getElementById("file-" + src.key);
+  // Delegated on the wrapper (not the individual file inputs) so uploads
+  // keep working after buildSourceCards() rebuilds the cards on a template
+  // switch, without needing to re-attach a listener each time.
+  sourcesWrap.addEventListener("change", function (e) {
+    var fileInput = e.target;
+    if (!fileInput || fileInput.type !== "file") return;
+    var src = SOURCES.filter(function (s) { return fileInput.id === "file-" + s.key; })[0];
+    if (!src) return;
+
+    var file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+
     var statusEl = document.getElementById("status-" + src.key);
     var detailsEl = document.getElementById("details-" + src.key);
     var ocrTextEl = document.getElementById("ocrtext-" + src.key);
 
-    fileInput.addEventListener("change", function () {
-      var file = fileInput.files && fileInput.files[0];
-      if (!file) return;
+    statusEl.className = "upload-status is-busy";
+    statusEl.innerHTML = '<span class="spinner"></span><span>Reading ' + escapeHtml(file.name) + '…</span>';
+    detailsEl.hidden = true;
 
-      statusEl.className = "upload-status is-busy";
-      statusEl.innerHTML = '<span class="spinner"></span><span>Reading ' + escapeHtml(file.name) + '…</span>';
-      detailsEl.hidden = true;
+    ocrFile(file).then(function (text) {
+      ocrTextEl.textContent = text.trim() || "(no text found)";
+      detailsEl.hidden = false;
 
-      ocrFile(file).then(function (text) {
-        ocrTextEl.textContent = text.trim() || "(no text found)";
-        detailsEl.hidden = false;
-
-        var parsed = parseOcrText(text);
-        var filledCount = 0;
-        FIELDS.forEach(function (field) {
-          var value = parsed[field.key];
-          if (value) {
-            document.getElementById(field.key + "-" + src.key).value = value;
-            filledCount++;
-          }
-        });
-
-        statusEl.className = "upload-status";
-        statusEl.innerHTML = "<span>Scanned " + escapeHtml(file.name) + " — filled " + filledCount + " of " + FIELDS.length + " field(s). Check against the text below.</span>";
-        updateAll();
-      }).catch(function (err) {
-        statusEl.className = "upload-status is-error";
-        statusEl.textContent = "Could not read this file: " + (err && err.message ? err.message : err);
+      var parsed = parseOcrText(text);
+      var filledCount = 0;
+      FIELDS.forEach(function (field) {
+        var value = parsed[field.key];
+        if (value) {
+          document.getElementById(field.key + "-" + src.key).value = value;
+          filledCount++;
+        }
       });
+
+      statusEl.className = "upload-status";
+      statusEl.innerHTML = "<span>Scanned " + escapeHtml(file.name) + " — filled " + filledCount + " of " + FIELDS.length + " field(s). Check against the text below.</span>";
+      updateAll();
+    }).catch(function (err) {
+      statusEl.className = "upload-status is-error";
+      statusEl.textContent = "Could not read this file: " + (err && err.message ? err.message : err);
     });
   });
 
-  updateAll();
+  var templateSelect = document.getElementById("templateSelect");
+  var templateHint = document.getElementById("templateHint");
+  function applyTemplate(key) {
+    FIELDS = COMMON_FIELDS.concat(TEMPLATE_EXTRA_FIELDS[key] || []);
+    templateHint.textContent = TEMPLATE_HINTS[key] || "";
+    buildSourceCards();
+    updateAll();
+  }
+  templateSelect.addEventListener("change", function () {
+    applyTemplate(templateSelect.value);
+  });
+  applyTemplate(templateSelect.value);
 })();
 </script>
 </body>
