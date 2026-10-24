@@ -642,7 +642,9 @@ header.hero p {
     });
     var filledSources = SOURCES.filter(function (src) { return raw[src.key].trim() !== ""; });
 
-    if (filledSources.length === 0) {
+    // Need at least two sources before flagging anything — one value alone
+    // has nothing to compare against yet, so there's nothing to report.
+    if (filledSources.length <= 1) {
       return { field: field, status: "empty", raw: raw };
     }
     if (filledSources.length < 3) {
