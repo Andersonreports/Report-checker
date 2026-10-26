@@ -972,7 +972,7 @@ header.hero p {
     return out;
   }
 
-  var STOP = "(?=\\n|$|\\s{2,}\\S|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Report\\s*Date|Collection|Received|Biopsy\\s*(?:Date|Performed)|Gestational|UHID)\\b|(?:W|S|D|C)\\/O\\b)";
+  var STOP = "(?=\\n|$|\\s{2,}\\S|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Date|Collection|Received|Biopsy\\s*(?:Date|Performed)|Gestational|UHID)\\b|(?:W|S|D|C)\\/O\\b)";
 
   function parseOcrText(text) {
     var t = (text || "").replace(/\r/g, "");
