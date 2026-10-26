@@ -737,17 +737,22 @@ header.hero p {
   // captured at, or whole rows come back as garbage. These two helpers do
   // that: upscale well past the source resolution, then push pixels toward
   // black/white so thin small text has more edge contrast to grab onto.
+  // Hard black/white threshold beats a linear contrast stretch here — tested
+  // directly against a colored LIS table screenshot (teal/navy theme) that
+  // came back as pure noise otherwise, and a threshold around 100 (not 128)
+  // recovered the doctor name, IDs and patient name almost perfectly while
+  // leaving a clean printed PDF unaffected (verified both ways before
+  // shipping this).
   function enhanceCanvasForOcr(canvas) {
     var ctx = canvas.getContext("2d");
     var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     var d = imgData.data;
     for (var i = 0; i < d.length; i += 4) {
       var gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      gray = (gray - 128) * 1.12 + 128;
-      gray = gray < 0 ? 0 : gray > 255 ? 255 : gray;
-      d[i] = gray;
-      d[i + 1] = gray;
-      d[i + 2] = gray;
+      var v = gray < 100 ? 0 : 255;
+      d[i] = v;
+      d[i + 1] = v;
+      d[i + 2] = v;
     }
     ctx.putImageData(imgData, 0, 0);
     return canvas;
@@ -764,11 +769,15 @@ header.hero p {
   }
 
   function upscaleImageToCanvas(img) {
-    // Target a wide canvas regardless of how small the source screenshot
-    // is — dense LIS tables are often captured well under 1500px wide,
-    // which is too small for Tesseract to read small cell text from.
-    var targetWidth = 2400;
-    var scale = Math.min(Math.max(targetWidth / img.naturalWidth, 1), 5);
+    // Scaling by width alone badly under-scales a wide-but-short table
+    // screenshot (e.g. 1855x312) — the width is already "big enough" so
+    // barely any upscale happens, but the actual text/row height stays
+    // tiny. Text legibility tracks height, not overall width, so take
+    // whichever target needs the bigger scale.
+    var targetWidth = 1800;
+    var targetHeight = 1400;
+    var scale = Math.max(targetWidth / img.naturalWidth, targetHeight / img.naturalHeight, 1);
+    scale = Math.min(scale, 6);
     var canvas = document.createElement("canvas");
     canvas.width = Math.round(img.naturalWidth * scale);
     canvas.height = Math.round(img.naturalHeight * scale);
@@ -910,7 +919,7 @@ header.hero p {
   // name>" — the referring hospital for that cell, not Anderson's own
   // processing-lab "Centre" column.
   function findRateTypeHospital(text) {
-    var m = text.match(/\d+#\s*([A-Z][A-Za-z0-9.,'\s-]{3,60})/);
+    var m = text.match(/\d+#\s*([A-Z][A-Za-z0-9.,'\s-]{3,45}?)(?=\n|$|\s{2,}\S|\s+(?:DR\.?|DOCTOR|REPRODUCTIVE|GENOMICS|DEPARTMENT)\b)/);
     return m ? m[1].trim() : "";
   }
 
