@@ -1089,7 +1089,7 @@ header.hero p {
       var parsed = parseOcrText(text);
       var filledCount = 0;
       FIELDS.forEach(function (field) {
-        var value = parsed[field.key];
+        var value = parsed[field.key] || getTemplateDefault(currentTemplateKey, src.key, field.key);
         if (value) {
           document.getElementById(field.key + "-" + src.key).value = value;
           filledCount++;
@@ -1105,12 +1105,37 @@ header.hero p {
     });
   });
 
+  // Per-template, per-source default values, used only when that source's
+  // own extraction comes up empty — e.g. a PGT-A report never states
+  // gender because the patient is always female, so there's nothing to
+  // compare against Freedom/TRF's actual gender without this. Other
+  // templates have no defaults: every source always uses whatever its own
+  // document says.
+  var TEMPLATE_DEFAULTS = {
+    pgta: { report: { gender: "Female" } }
+  };
+  function getTemplateDefault(templateKey, srcKey, fieldKey) {
+    var t = TEMPLATE_DEFAULTS[templateKey];
+    var s = t && t[srcKey];
+    return (s && s[fieldKey]) || "";
+  }
+
+  var currentTemplateKey = "common";
   var templateSelect = document.getElementById("templateSelect");
   var templateHint = document.getElementById("templateHint");
   function applyTemplate(key) {
+    currentTemplateKey = key;
     FIELDS = COMMON_FIELDS.concat(TEMPLATE_EXTRA_FIELDS[key] || []);
     templateHint.textContent = TEMPLATE_HINTS[key] || "";
     buildSourceCards();
+    SOURCES.forEach(function (src) {
+      FIELDS.forEach(function (field) {
+        var def = getTemplateDefault(key, src.key, field.key);
+        if (!def) return;
+        var el = document.getElementById(field.key + "-" + src.key);
+        if (el && !el.value) el.value = def;
+      });
+    });
     updateAll();
   }
   templateSelect.addEventListener("change", function () {
