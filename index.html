@@ -364,6 +364,7 @@ header.hero p {
       <option value="common">General (common fields only)</option>
       <option value="pgta">PGT-A</option>
       <option value="qfpcr">QF-PCR</option>
+      <option value="ycmd">YCMD</option>
       <option value="karyotyping">Karyotyping</option>
       <option value="nipt">NIPT</option>
     </select>
@@ -501,6 +502,10 @@ header.hero p {
       { key: "pregnancyType", label: "Pregnancy Type", placeholder: "e.g. Natural Pregnancy", normalize: normalizeText },
       { key: "receiptDate", label: "Sample Receipt Date", placeholder: "e.g. 14-10-2026", normalize: normalizeDate }
     ],
+    ycmd: [
+      { key: "specimenType", label: "Specimen Type", placeholder: "e.g. Peripheral Blood", normalize: normalizeText },
+      { key: "receiptDate", label: "Sample Receipt Date", placeholder: "e.g. 21-10-2026", normalize: normalizeDate }
+    ],
     karyotyping: [],
     nipt: []
   };
@@ -509,6 +514,7 @@ header.hero p {
     common: "Checks the 7 common patient/sample fields only.",
     pgta: "Adds partner's name, specimen type, biopsy date, sample receipt date, biopsy performer and embryo ID(s).",
     qfpcr: "Adds partner's name, specimen type, gestational age, pregnancy type and sample receipt date.",
+    ycmd: "Adds specimen type and sample receipt date.",
     karyotyping: "No extra fields added yet — common fields only for now.",
     nipt: "No extra fields added yet — common fields only for now."
   };
@@ -1132,7 +1138,10 @@ header.hero p {
     pgta: { report: { gender: "Female" } },
     // QF-PCR (amniotic fluid aneuploidy screening) is also always a
     // pregnant patient, so the same reasoning applies here.
-    qfpcr: { report: { gender: "Female" } }
+    qfpcr: { report: { gender: "Female" } },
+    // YCMD (Y-chromosome microdeletion) only applies to male patients, and
+    // the report never states gender either.
+    ycmd: { report: { gender: "Male" } }
   };
   function getTemplateDefault(templateKey, srcKey, fieldKey) {
     var t = TEMPLATE_DEFAULTS[templateKey];
