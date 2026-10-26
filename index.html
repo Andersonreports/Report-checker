@@ -363,6 +363,7 @@ header.hero p {
     <select id="templateSelect">
       <option value="common">General (common fields only)</option>
       <option value="pgta">PGT-A</option>
+      <option value="qfpcr">QF-PCR</option>
       <option value="karyotyping">Karyotyping</option>
       <option value="nipt">NIPT</option>
     </select>
@@ -493,6 +494,13 @@ header.hero p {
       { key: "biopsyBy", label: "Biopsy Performed By", placeholder: "e.g. Vidyashree K. Teji", normalize: normalizeText },
       { key: "embryoIds", label: "Embryo ID(s)", placeholder: "e.g. PS1, PS2, PS3", normalize: normalizeIdList }
     ],
+    qfpcr: [
+      { key: "partnerName", label: "Partner's Name", placeholder: "e.g. Mr. Suresh Kumar", normalize: normalizeText, fuzzyPrefix: true },
+      { key: "specimenType", label: "Specimen Type", placeholder: "e.g. Amniotic Fluid", normalize: normalizeText },
+      { key: "gestationalAge", label: "Gestational Age", placeholder: "e.g. 23 Weeks / 1 Day", normalize: normalizeText },
+      { key: "pregnancyType", label: "Pregnancy Type", placeholder: "e.g. Natural Pregnancy", normalize: normalizeText },
+      { key: "receiptDate", label: "Sample Receipt Date", placeholder: "e.g. 14-10-2026", normalize: normalizeDate }
+    ],
     karyotyping: [],
     nipt: []
   };
@@ -500,6 +508,7 @@ header.hero p {
   var TEMPLATE_HINTS = {
     common: "Checks the 7 common patient/sample fields only.",
     pgta: "Adds partner's name, specimen type, biopsy date, sample receipt date, biopsy performer and embryo ID(s).",
+    qfpcr: "Adds partner's name, specimen type, gestational age, pregnancy type and sample receipt date.",
     karyotyping: "No extra fields added yet — common fields only for now.",
     nipt: "No extra fields added yet — common fields only for now."
   };
@@ -957,7 +966,7 @@ header.hero p {
     return out;
   }
 
-  var STOP = "(?=\\n|$|\\s{2,}\\S|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Report\\s*Date|Collection|Received|Biopsy\\s*(?:Date|Performed)|UHID)\\b)";
+  var STOP = "(?=\\n|$|\\s{2,}\\S|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Report\\s*Date|Collection|Received|Biopsy\\s*(?:Date|Performed)|Gestational|UHID)\\b|(?:W|S|D|C)\\/O\\b)";
 
   function parseOcrText(text) {
     var t = (text || "").replace(/\r/g, "");
@@ -988,7 +997,7 @@ header.hero p {
       /\b(?:sample\s*number|sample\s*no\.?|lab\s*no\.?|sin\s*no\.?)\s*[:\-]?\s*([A-Za-z0-9\-]+)/i
     ], isPlausibleId);
     out.collectionDate = firstMatch(t, [
-      /(?:sample\s*collection\s*date|collection\s*date|entry\s*date\s*time?)\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i,
+      /(?:sample\s*collection\s*date|collection\s*date|entry\s*date\s*time?)\s*[:\-]?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4})/i,
       /(?:sample\s*collection\s*date|collection\s*date)\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
     ]);
 
@@ -1019,18 +1028,18 @@ header.hero p {
       new RegExp("specimen\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
     ]);
     out.biopsyDate = firstMatch(t, [
-      /biopsy\s*date\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i,
+      /biopsy\s*date\s*[:\-]?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4})/i,
       /biopsy\s*date\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
     ]);
     out.receiptDate = firstMatch(t, [
-      /(?:sample\s*)?receipt\s*date\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i,
+      /(?:sample\s*)?receipt\s*date\s*[:\-]?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4})/i,
       /(?:sample\s*)?receipt\s*date\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
     ]);
     out.biopsyBy = firstValidMatch(t, [
       new RegExp("biopsy\\s*performed\\s*by\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
     ], looksLikeRealValue);
     out.partnerName = firstMatch(t, [
-      /\b(?:W\/O|S\/O|D\/O|C\/O)\s*[:\-]?\s*(?:MR\.?|MRS\.?|MS\.?|DR\.?)?\s*([^\n]+)/i
+      new RegExp("\\b(?:W\\/O|S\\/O|D\\/O|C\\/O)\\s*[:\\-]?\\s*(?:MR\\.?|MRS\\.?|MS\\.?|DR\\.?)?\\s*([^\\n]+?)" + STOP, "i")
     ]);
     out.embryoIds = (function () {
       var ids = [];
@@ -1049,6 +1058,14 @@ header.hero p {
       }
       return ids.join(", ");
     })();
+
+    // QF-PCR / prenatal-test fields
+    out.gestationalAge = firstMatch(t, [
+      new RegExp("gestational\\s*age\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
+    ]);
+    out.pregnancyType = firstMatch(t, [
+      new RegExp("pregnancy\\s*type\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
+    ]);
 
     // A label that sits on its own line (common on forms) can get swept into
     // the capture when the separator crosses the line break, so strip it
@@ -1112,7 +1129,10 @@ header.hero p {
   // templates have no defaults: every source always uses whatever its own
   // document says.
   var TEMPLATE_DEFAULTS = {
-    pgta: { report: { gender: "Female" } }
+    pgta: { report: { gender: "Female" } },
+    // QF-PCR (amniotic fluid aneuploidy screening) is also always a
+    // pregnant patient, so the same reasoning applies here.
+    qfpcr: { report: { gender: "Female" } }
   };
   function getTemplateDefault(templateKey, srcKey, fieldKey) {
     var t = TEMPLATE_DEFAULTS[templateKey];
