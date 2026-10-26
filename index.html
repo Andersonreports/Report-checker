@@ -476,6 +476,7 @@ header.hero p {
     { key: "gender", label: "Gender", placeholder: "e.g. Male", normalize: normalizeGender },
     { key: "uhid", label: "Patient ID / UHID", placeholder: "e.g. AD-00123456", normalize: normalizeId },
     { key: "doctor", label: "Referring Doctor", placeholder: "e.g. Dr. S. Mehta", normalize: normalizeDoctor },
+    { key: "hospital", label: "Hospital / Clinic", placeholder: "e.g. City Hospital", normalize: normalizeText, fuzzyPrefix: true },
     { key: "sampleId", label: "Sample / Barcode No.", placeholder: "e.g. 7741098", normalize: normalizeId },
     { key: "collectionDate", label: "Collection Date", placeholder: "e.g. 21/10/2026", normalize: normalizeDate }
   ];
@@ -832,7 +833,11 @@ header.hero p {
     return "";
   }
 
-  function hasDigit(s) { return /\d/.test(s); }
+  // Real IDs/sample numbers run long. This rejects a stray single digit
+  // that OCR sometimes inserts right after a label — e.g. a misread colon
+  // ("SAMPLE NUMBER 1 261141361" instead of "SAMPLE NUMBER : 261141361")
+  // — so the match keeps scanning instead of grabbing that "1" as the value.
+  function isPlausibleId(s) { return s.replace(/\D/g, "").length >= 5; }
 
   // Rejects a capture that is actually another column header rather than real
   // data — happens when a table's headers sit on one line with no value
@@ -883,6 +888,14 @@ header.hero p {
   // "Doctor:" label exists to anchor on.
   function findDuplicatedPhrase(text) {
     var m = text.match(/\b([A-Z][A-Z&.\-]{2,}(?:\s+[A-Z][A-Z&.\-]{1,}){1,5})\s+\1\b/);
+    return m ? m[1].trim() : "";
+  }
+
+  // Freedom's "Rate Type" column renders as "<billing code># <hospital
+  // name>" — the referring hospital for that cell, not Anderson's own
+  // processing-lab "Centre" column.
+  function findRateTypeHospital(text) {
+    var m = text.match(/\d+#\s*([A-Z][A-Za-z0-9.,'\s-]{3,60})/);
     return m ? m[1].trim() : "";
   }
 
@@ -963,13 +976,17 @@ header.hero p {
     out.uhid = firstValidMatch(t, [
       /\bPIN\s*[:\-]?\s*([A-Za-z0-9]+)/i,
       /\bUHID\s*[:\-]?\s*([A-Za-z0-9\-]+)/i
-    ], hasDigit);
+    ], isPlausibleId);
     out.doctor = firstValidMatch(t, [
       new RegExp("(?:referring\\s*clinician|referring\\s*doctor|clinical\\s*name|ref(?:erred)?\\s*by)\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
     ], looksLikeRealValue);
+    out.hospital = firstValidMatch(t, [
+      new RegExp("hospital\\s*\\/?\\s*clinic\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i"),
+      new RegExp("hospital\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
+    ], looksLikeRealValue);
     out.sampleId = firstValidMatch(t, [
       /\b(?:sample\s*number|sample\s*no\.?|lab\s*no\.?|sin\s*no\.?)\s*[:\-]?\s*([A-Za-z0-9\-]+)/i
-    ], hasDigit);
+    ], isPlausibleId);
     out.collectionDate = firstMatch(t, [
       /(?:sample\s*collection\s*date|collection\s*date|entry\s*date\s*time?)\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4})/i,
       /(?:sample\s*collection\s*date|collection\s*date)\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
@@ -992,6 +1009,7 @@ header.hero p {
     if (!out.uhid) out.uhid = findLabPin(t);
     if (!out.sampleId) out.sampleId = findFallbackNumericId(t);
     if (!out.doctor) out.doctor = findDuplicatedPhrase(t);
+    if (!out.hospital) out.hospital = findRateTypeHospital(t);
     if (!out.collectionDate) out.collectionDate = findPrintedTimestamp(t);
     if (!out.name) out.name = findTitledName(t);
 
@@ -1038,6 +1056,7 @@ header.hero p {
     var LEADING_LABEL = /^(?:referring\s*clinician|referring\s*doctor|clinical\s*name|full\s*name|patient\s*name|ref(?:erred)?\s*by)\s*[:\-]?\s*/i;
     out.name = (out.name || "").replace(LEADING_LABEL, "");
     out.doctor = (out.doctor || "").replace(LEADING_LABEL, "");
+    out.hospital = (out.hospital || "").replace(/^hospital\s*\/?\s*clinic\s*[:\-]?\s*/i, "");
 
     Object.keys(out).forEach(function (k) { out[k] = cleanLine(out[k]); });
     return out;
