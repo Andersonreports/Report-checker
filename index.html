@@ -741,31 +741,38 @@ header.hero p {
 
   // ---- Export (Excel / PDF) ----
   var STATUS_LABELS = { match: "Match", mismatch: "Mismatch", incomplete: "Incomplete", empty: "No data" };
-  // PDF fill: [R,G,B] 0-255 subtle palette
-  var STATUS_PDF_FILL = {
-    Match:      [215, 239, 217],  // subtle green
-    Mismatch:   [253, 222, 221],  // subtle red
-    Incomplete: [255, 249, 196],  // subtle yellow
-    "No data":  [255, 249, 196]   // subtle yellow
-  };
-  var FIELD_PDF_FILL  = [245, 240, 228]; // beige for field label column
-  // Excel hex fills (6-char, no #)
-  var STATUS_XL_FILL = {
-    Match:      "D7EFD9",
-    Mismatch:   "FDDEDD",
-    Incomplete: "FFF9C4",
-    "No data":  "FFF9C4"
-  };
+  // PDF fill colours matching TEMPLATE.xlsx [R,G,B]
+  var PDF_FILL_TITLE  = [213, 166, 189]; // D5A6BD mauve
+  var PDF_FILL_HEADER = [207, 226, 243]; // CFE2F3 light blue
+  var PDF_FILL_FIELD  = [244, 235, 230]; // F4EBE6 light salmon
+  var PDF_FILL_GREEN  = [217, 234, 211]; // D9EAD3 match
+  var PDF_FILL_RED    = [244, 204, 204]; // F4CCCC mismatch
+  var PDF_FILL_YELLOW = [255, 242, 204]; // FFF2CC empty/missing
 
   function buildExportRows() {
     return FIELDS.map(function (field) {
       var result = evaluateField(field);
+      // Per-source cell status for export fills
+      var cs = {};
+      SOURCES.forEach(function (src) {
+        var hasVal = result.raw[src.key].trim() !== "";
+        if (result.status === "empty") {
+          cs[src.key] = hasVal ? "solo" : "empty";
+        } else if (result.status === "match") {
+          cs[src.key] = hasVal ? "match" : "empty";
+        } else if (result.status === "incomplete") {
+          cs[src.key] = !hasVal ? "empty" : (result.filledAgree ? "match" : "mismatch");
+        } else {
+          cs[src.key] = !hasVal ? "empty" : (result.differing.indexOf(src.label) !== -1 ? "mismatch" : "match");
+        }
+      });
       return {
         label: field.label,
         report: result.raw.report,
         freedom: result.raw.freedom,
         trf: result.raw.trf,
-        status: STATUS_LABELS[result.status]
+        status: STATUS_LABELS[result.status],
+        cs: cs
       };
     });
   }
@@ -783,54 +790,71 @@ header.hero p {
   document.getElementById("exportExcelBtn").addEventListener("click", function () {
     if (!window.XLSX) return;
     var rows = buildExportRows();
-    var COLS = ["A", "B", "C", "D", "E"];
-    var templateName = currentTemplateLabel();
-    // Row 1: merged title with template name + date
-    // Row 2: column headers
-    // Row 3+: data
-    var colHeader = ["Field", "Report", "Freedom Screenshot", "TRF", "Status"];
-    var data = [
-      [templateName + " — Report Checker (" + exportFileNameStamp() + ")", "", "", "", ""],
-      colHeader
-    ];
-    rows.forEach(function (r) { data.push([r.label, r.report, r.freedom, r.trf, r.status]); });
-    var ws = XLSX.utils.aoa_to_sheet(data);
-    ws["!cols"] = [{ wch: 24 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 14 }];
-    ws["!ref"] = "A1:E" + data.length;
-    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];  // merge title row A1:E1
+
+    // Template colours (matched exactly from TEMPLATE.xlsx)
+    var C_TITLE   = "D5A6BD"; // mauve title bar
+    var C_HEADER  = "CFE2F3"; // light blue column headers
+    var C_FIELD   = "F4EBE6"; // light salmon – field label column
+    var C_GREEN   = "D9EAD3"; // cell value matches
+    var C_RED     = "F4CCCC"; // cell value mismatches
+    var C_YELLOW  = "FFF2CC"; // empty / missing cell
+    var C_WHITE   = "FFFFFF";
+    var STATUS_TEXT = { Match: "6AA84F", Mismatch: "CC0000", Incomplete: "F1C232", "No data": "FFD966" };
 
     function xlFill(rgb) { return { patternType: "solid", fgColor: { rgb: rgb } }; }
-    function xlFont(rgb, bold) { return { color: { rgb: rgb }, bold: !!bold, sz: 11 }; }
-    var CENTER = { horizontal: "center", vertical: "center", wrapText: true };
-    var VCENTER = { vertical: "center", wrapText: true };
+    function xlFont(rgb, bold) { return { bold: !!bold, color: { rgb: rgb || "000000" }, name: "Arial", sz: 10 }; }
+    var ALIGN_C = { horizontal: "center", vertical: "center", wrapText: true };
+    var ALIGN_L = { vertical: "center", wrapText: true };
 
-    // Row 1: title
-    var titleCell = ws["A1"];
-    if (!titleCell) titleCell = ws["A1"] = { t: "s", v: data[0][0] };
-    titleCell.s = { fill: xlFill("1A4C5B"), font: { color: { rgb: "FFFFFF" }, bold: true, sz: 13 }, alignment: CENTER };
+    // Title: "Template – Patient Name"
+    var nameRow = rows.find(function (r) { return r.label === "Patient Name"; });
+    var patientPart = (nameRow && nameRow.report) ? " – " + nameRow.report.toUpperCase() : "";
+    var title = currentTemplateLabel() + patientPart;
 
-    // Row 2: column headers (teal)
-    COLS.forEach(function (col, ci) {
-      var addr = col + "2";
-      if (!ws[addr]) ws[addr] = { t: "s", v: colHeader[ci] };
-      ws[addr].s = { fill: xlFill("0E7C86"), font: xlFont("FFFFFF", true), alignment: CENTER };
+    // Build data array: row 1 = title, row 2 = headers, row 3+ = data
+    var colHdr = ["Field", "Report", "Freedom Screenshot", "TRF", "Status"];
+    var data = [[title, "", "", "", ""], colHdr];
+    rows.forEach(function (r) { data.push([r.label, r.report, r.freedom, r.trf, r.status]); });
+
+    var ws = XLSX.utils.aoa_to_sheet(data);
+    ws["!cols"] = [{ wch: 24 }, { wch: 28 }, { wch: 28 }, { wch: 28 }, { wch: 13 }];
+    ws["!ref"] = "A1:E" + data.length;
+    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];
+
+    function sc(addr, fillRgb, fontRgb, bold, align) {
+      if (!ws[addr]) ws[addr] = { t: "s", v: "" };
+      ws[addr].s = { fill: xlFill(fillRgb || C_WHITE), font: xlFont(fontRgb || "000000", bold), alignment: align || ALIGN_L };
+    }
+
+    // Row 1 – merged title
+    sc("A1", C_TITLE, "000000", true, ALIGN_C);
+    ["B","C","D","E"].forEach(function (c) { sc(c + "1", C_TITLE, "000000", false, ALIGN_C); });
+
+    // Row 2 – column headers (Status is bold)
+    ["A","B","C","D","E"].forEach(function (c, ci) {
+      sc(c + "2", C_HEADER, "000000", ci === 4, ALIGN_C);
     });
 
-    // Row 3+: data rows
+    // Data rows
     rows.forEach(function (r, ri) {
-      var rowNum = ri + 3;
-      var dataFill = STATUS_XL_FILL[r.status] || "FFFFFF";
-      var vals = [r.label, r.report, r.freedom, r.trf, r.status];
-      COLS.forEach(function (col, ci) {
-        var addr = col + rowNum;
-        if (!ws[addr]) ws[addr] = { t: "s", v: vals[ci] || "" };
-        var isField = ci === 0;
-        ws[addr].s = {
-          fill: xlFill(isField ? "F5F0E4" : dataFill),
-          font: xlFont("222222", isField),
-          alignment: VCENTER
-        };
+      var rn = ri + 3;
+
+      // A – field label
+      sc("A" + rn, C_FIELD, "000000", false, ALIGN_L);
+
+      // B, C, D – per-cell fill
+      [{ c: "B", k: "report" }, { c: "C", k: "freedom" }, { c: "D", k: "trf" }].forEach(function (m) {
+        var cellSt = r.cs[m.k];
+        var fill = cellSt === "match"    ? C_GREEN
+                 : cellSt === "mismatch" ? C_RED
+                 : cellSt === "empty"    ? C_YELLOW
+                 : C_WHITE; // "solo" – only this source has data, no fill
+        sc(m.c + rn, fill, "000000", false, ALIGN_L);
       });
+
+      // E – status: no fill, bold coloured text
+      var stColor = STATUS_TEXT[r.status] || "000000";
+      sc("E" + rn, C_WHITE, stColor, true, ALIGN_C);
     });
 
     var wb = XLSX.utils.book_new();
@@ -841,27 +865,40 @@ header.hero p {
   document.getElementById("exportPdfBtn").addEventListener("click", function () {
     if (!window.jspdf) return;
     var rows = buildExportRows();
+    var nameRow = rows.find(function (r) { return r.label === "Patient Name"; });
+    var patientPart = (nameRow && nameRow.report) ? " – " + nameRow.report.toUpperCase() : "";
+    var titleText = currentTemplateLabel() + patientPart;
+    var STATUS_TEXT_PDF = { Match: [106,168,79], Mismatch: [204,0,0], Incomplete: [241,194,50], "No data": [255,217,102] };
     var doc = new jspdf.jsPDF({ orientation: "landscape" });
-    doc.setFontSize(14);
-    doc.text("Report Checker — " + currentTemplateLabel(), 14, 16);
-    doc.setFontSize(9);
-    doc.setTextColor(110);
-    doc.text("Generated " + new Date().toLocaleString(), 14, 22);
     doc.autoTable({
-      startY: 27,
-      head: [["Field", "Report", "Freedom Screenshot", "TRF", "Status"]],
+      startY: 10,
+      head: [[{ content: titleText, colSpan: 5, styles: { fillColor: PDF_FILL_TITLE, textColor: [0,0,0], fontStyle: "bold", halign: "left", fontSize: 11 } }],
+             ["Field", "Report", "Freedom Screenshot", "TRF", "Status"]],
       body: rows.map(function (r) { return [r.label, r.report, r.freedom, r.trf, r.status]; }),
-      styles: { fontSize: 8, cellPadding: 3, overflow: "linebreak" },
-      headStyles: { fillColor: [14, 124, 134] },
-      columnStyles: { 0: { fontStyle: "bold", cellWidth: 36 } },
+      styles: { fontSize: 8, cellPadding: 3, overflow: "linebreak", font: "helvetica" },
+      headStyles: { fillColor: PDF_FILL_HEADER, textColor: [0, 0, 0] },
+      columnStyles: { 0: { cellWidth: 36 }, 4: { cellWidth: 22, halign: "center", fontStyle: "bold" } },
       didParseCell: function (hook) {
         if (hook.section !== "body") return;
-        if (hook.column.index === 0) {
-          hook.cell.styles.fillColor = FIELD_PDF_FILL;
+        var ci = hook.column.index;
+        var row = rows[hook.row.index];
+        if (!row) return;
+        if (ci === 0) {
+          hook.cell.styles.fillColor = PDF_FILL_FIELD;
+        } else if (ci === 4) {
+          // Status: no fill, coloured text
+          hook.cell.styles.fillColor = [255, 255, 255];
+          var tc = STATUS_TEXT_PDF[row.status];
+          if (tc) hook.cell.styles.textColor = tc;
         } else {
-          var rowStatus = rows[hook.row.index] && rows[hook.row.index].status;
-          var fill = STATUS_PDF_FILL[rowStatus];
-          if (fill) hook.cell.styles.fillColor = fill;
+          // B/C/D: per-cell fill
+          var srcKey = ["report", "freedom", "trf"][ci - 1];
+          var cs = row.cs[srcKey];
+          hook.cell.styles.fillColor =
+            cs === "match"    ? PDF_FILL_GREEN  :
+            cs === "mismatch" ? PDF_FILL_RED    :
+            cs === "empty"    ? PDF_FILL_YELLOW :
+            [255, 255, 255];  // solo – no fill
         }
       }
     });
