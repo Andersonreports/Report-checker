@@ -740,11 +740,20 @@ header.hero p {
 
   // ---- Export (Excel / PDF) ----
   var STATUS_LABELS = { match: "Match", mismatch: "Mismatch", incomplete: "Incomplete", empty: "No data" };
+  // PDF fill: [R,G,B] 0-255 subtle palette
   var STATUS_PDF_FILL = {
-    Match: [229, 245, 233],
-    Mismatch: [252, 235, 233],
-    Incomplete: [251, 241, 221],
-    "No data": [238, 241, 242]
+    Match:      [215, 239, 217],  // subtle green
+    Mismatch:   [253, 222, 221],  // subtle red
+    Incomplete: [255, 249, 196],  // subtle yellow
+    "No data":  [255, 249, 196]   // subtle yellow
+  };
+  var FIELD_PDF_FILL  = [245, 240, 228]; // beige for field label column
+  // Excel hex fills (6-char, no #)
+  var STATUS_XL_FILL = {
+    Match:      "D7EFD9",
+    Mismatch:   "FDDEDD",
+    Incomplete: "FFF9C4",
+    "No data":  "FFF9C4"
   };
 
   function buildExportRows() {
@@ -773,10 +782,43 @@ header.hero p {
   document.getElementById("exportExcelBtn").addEventListener("click", function () {
     if (!window.XLSX) return;
     var rows = buildExportRows();
-    var data = [["Field", "Report", "Freedom Screenshot", "TRF", "Status"]];
+    var COLS = ["A", "B", "C", "D", "E"];
+    var header = ["Field", "Report", "Freedom Screenshot", "TRF", "Status"];
+    var data = [header];
     rows.forEach(function (r) { data.push([r.label, r.report, r.freedom, r.trf, r.status]); });
     var ws = XLSX.utils.aoa_to_sheet(data);
-    ws["!cols"] = [{ wch: 22 }, { wch: 28 }, { wch: 28 }, { wch: 28 }, { wch: 12 }];
+    ws["!cols"] = [{ wch: 24 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 14 }];
+    ws["!ref"] = "A1:E" + data.length;
+
+    function xlCell(rgb, bold, whiteText) {
+      return {
+        fill: { patternType: "solid", fgColor: { rgb: rgb } },
+        font: { bold: !!bold, color: { rgb: whiteText ? "FFFFFF" : "222222" } },
+        alignment: { wrapText: true, vertical: "center" }
+      };
+    }
+
+    // Header row
+    COLS.forEach(function (col) {
+      var addr = col + "1";
+      if (!ws[addr]) ws[addr] = { t: "s", v: header[COLS.indexOf(col)] };
+      ws[addr].s = xlCell("0E7C86", true, true);
+      ws[addr].s.alignment.horizontal = "center";
+    });
+
+    // Data rows
+    rows.forEach(function (r, ri) {
+      var rowNum = ri + 2;
+      var dataFill = STATUS_XL_FILL[r.status] || "FFFFFF";
+      var vals = [r.label, r.report, r.freedom, r.trf, r.status];
+      COLS.forEach(function (col, ci) {
+        var addr = col + rowNum;
+        if (!ws[addr]) ws[addr] = { t: "s", v: vals[ci] || "" };
+        var isFieldCol = ci === 0;
+        ws[addr].s = xlCell(isFieldCol ? "F5F0E4" : dataFill, isFieldCol, false);
+      });
+    });
+
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Comparison");
     XLSX.writeFile(wb, "report-checker-" + currentTemplateKey + "-" + exportFileNameStamp() + ".xlsx");
@@ -799,8 +841,12 @@ header.hero p {
       headStyles: { fillColor: [14, 124, 134] },
       columnStyles: { 0: { fontStyle: "bold", cellWidth: 36 } },
       didParseCell: function (hook) {
-        if (hook.section === "body" && hook.column.index === 4) {
-          var fill = STATUS_PDF_FILL[hook.cell.raw];
+        if (hook.section !== "body") return;
+        if (hook.column.index === 0) {
+          hook.cell.styles.fillColor = FIELD_PDF_FILL;
+        } else {
+          var rowStatus = rows[hook.row.index] && rows[hook.row.index].status;
+          var fill = STATUS_PDF_FILL[rowStatus];
           if (fill) hook.cell.styles.fillColor = fill;
         }
       }
@@ -809,25 +855,28 @@ header.hero p {
   });
 
   // ---- OCR (Tesseract.js, on-device, no API key) ----
-  // Tesseract reads clean label:value PDF text reliably even at modest
-  // resolution, but dense UI screenshots (small table text, icon-heavy rows)
-  // need to be fed in much larger and higher-contrast than they're usually
-  // captured at, or whole rows come back as garbage. These two helpers do
-  // that: upscale well past the source resolution, then push pixels toward
-  // black/white so thin small text has more edge contrast to grab onto.
+  // This path now only runs for sources with no real PDF text layer to pull
+  // from instead (see extractPdfTextLayer below): images, and scanned/
+  // handwritten PDFs. Tesseract needs these fed in much larger and
+  // higher-contrast than they're usually captured at, or whole rows come
+  // back as garbage, especially on dense UI screenshots (small table text,
+  // icon-heavy rows). These two helpers do that: upscale well past the
+  // source resolution, then push pixels toward black/white so thin small
+  // text has more edge contrast to grab onto.
   // Hard black/white threshold beats a linear contrast stretch here — tested
-  // directly against a colored LIS table screenshot (teal/navy theme) that
-  // came back as pure noise otherwise, and a threshold around 100 (not 128)
-  // recovered the doctor name, IDs and patient name almost perfectly while
-  // leaving a clean printed PDF unaffected (verified both ways before
-  // shipping this).
+  // directly against multiple LIS screenshots (teal/navy theme) and scanned
+  // TRF photos via Playwright/Chromium ground-truth runs. 115 maximises total
+  // correct field extraction across all file types: lower values crush text
+  // on bright-background screenshots; higher values (e.g. 130) break
+  // sample-ID extraction on handwritten TRF photos and produce garbage OCR
+  // values that slip through plausibility checks.
   function enhanceCanvasForOcr(canvas) {
     var ctx = canvas.getContext("2d");
     var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     var d = imgData.data;
     for (var i = 0; i < d.length; i += 4) {
       var gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      var v = gray < 100 ? 0 : 255;
+      var v = gray < 115 ? 0 : 255;
       d[i] = v;
       d[i + 1] = v;
       d[i + 2] = v;
@@ -1103,9 +1152,17 @@ header.hero p {
 
   // Freedom's "Rate Type" column renders as "<billing code># <hospital
   // name>" — the referring hospital for that cell, not Anderson's own
-  // processing-lab "Centre" column.
+  // processing-lab "Centre" column. The "#" itself OCRs inconsistently at
+  // this cell's small size — seen coming back as "z", "%#", or a stray
+  // extra digit in different runs of the very same image — so instead of
+  // anchoring on it directly, this just skips whatever non-space junk sits
+  // between the digits and the capital letter that starts the hospital name.
   function findRateTypeHospital(text) {
-    var m = text.match(/\d+#\s*([A-Z][A-Za-z0-9.,'\s-]{3,45}?)(?=\n|$|\s{2,}\S|\s+(?:DR\.?|DOCTOR|REPRODUCTIVE|GENOMICS|DEPARTMENT)\b)/);
+    // \b...\b pins the billing code to exactly 3-7 digits with non-digits on
+    // both sides, so this can't latch onto a slice of one of the much longer
+    // sample/lab ID numbers elsewhere on the same row; the junk class
+    // between it and the name excludes digits too, for the same reason.
+    var m = text.match(/\b\d{3,7}\b[^\s\dA-Z]{0,2}\s*([A-Z][A-Za-z0-9.,'\s-]{3,45}?)(?=\n|$|\s{2,}\S|\s+(?:DR\.?|DOCTOR|REPRODUCTIVE|GENOMICS|DEPARTMENT)\b)/);
     return m ? m[1].trim() : "";
   }
 
@@ -1147,8 +1204,10 @@ header.hero p {
     // star-of-zero) — otherwise "MRS?" can match "MR" and let the mandatory
     // [A-Z] absorb the real title's own "S", so "MRS." alone (title plus
     // the period right after it) falsely satisfies the whole pattern and
-    // returns "MRS" as if that were a name.
-    var m = text.match(/\b((?:MRS?|MS|DR)\.?\s*[A-Z][A-Za-z]{2,}(?:\s+[A-Z][A-Za-z']{2,}){0,4})(?=['"‘’“”]?\s*(?:\d|\n|$|[.,;:)]))/);
+    // returns "MRS" as if that were a name. The separator after the title
+    // accepts a hyphen as well as a period — the same small period glyph has
+    // been seen OCR'd as either, depending on the binarization threshold.
+    var m = text.match(/\b((?:MRS?|MS|DR)[.\-]?\s*[A-Z][A-Za-z]{2,}(?:\s+[A-Z][A-Za-z']{2,}){0,4})(?=['"‘’“”]?\s*(?:\d|\n|$|[.,;:)]))/);
     return m ? m[1].trim() : "";
   }
 
