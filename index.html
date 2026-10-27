@@ -273,6 +273,47 @@ header.hero p {
 .field-row.row-incomplete { background: var(--incomplete-bg); }
 /* yellow only activates once at least one source file has been uploaded */
 .has-uploads .field-row.row-empty { background: var(--empty-bg); }
+/* ---- Mismatch / missing tooltip ---- */
+.field-row[data-tip] { position: relative; cursor: default; }
+.field-row[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% + 8px);
+  background: #1c2b33;
+  color: #e8f0f3;
+  font-family: "Inter", sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 8px 12px;
+  border-radius: 8px;
+  max-width: 320px;
+  white-space: pre-line;
+  text-align: left;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease 0.2s;
+  z-index: 999;
+}
+.field-row[data-tip]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% + 4px);
+  border: 5px solid transparent;
+  border-top-color: #1c2b33;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease 0.2s;
+  z-index: 999;
+}
+.field-row[data-tip]:hover::after,
+.field-row[data-tip]:hover::before { opacity: 1; }
+
 .field-row .dot {
   width: 9px;
   height: 9px;
@@ -613,6 +654,18 @@ header.hero p {
       var rowEl = document.getElementById(field.key + "-row-" + src.key);
       dotEl.className = cls ? "dot dot-" + cls : "dot";
       rowEl.className  = cls ? "field-row row-" + cls : "field-row";
+
+      // Tooltip on mismatch or missing rows: show all source values so the
+      // user can see at a glance what each source says for this field.
+      if (cls === "mismatch" || cls === "empty") {
+        var tipLines = SOURCES.map(function (s) {
+          var v = result.raw[s.key].trim();
+          return s.label + ": " + (v || "—");
+        });
+        rowEl.setAttribute("data-tip", tipLines.join("\n"));
+      } else {
+        rowEl.removeAttribute("data-tip");
+      }
     });
   }
 
