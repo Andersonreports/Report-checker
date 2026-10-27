@@ -329,9 +329,10 @@ header.hero p {
 .actions {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
   margin-top: 16px;
 }
-#clearBtn {
+#clearBtn, #exportExcelBtn, #exportPdfBtn {
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -343,6 +344,8 @@ header.hero p {
   cursor: pointer;
 }
 #clearBtn:hover { color: var(--mismatch); border-color: var(--mismatch); }
+#exportExcelBtn, #exportPdfBtn { color: var(--accent); border-color: var(--accent); }
+#exportExcelBtn:hover, #exportPdfBtn:hover { background: var(--accent-soft); }
 
 @media (max-width: 860px) {
   .sources { grid-template-columns: 1fr; }
@@ -379,12 +382,17 @@ header.hero p {
   <section class="sources" id="sourcesWrap"></section>
 
   <div class="actions">
+    <button id="exportExcelBtn" type="button">Download as Excel</button>
+    <button id="exportPdfBtn" type="button">Download as PDF</button>
     <button id="clearBtn" type="button">Clear all fields</button>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/5.0.9/jspdf.plugin.autotable.min.js"></script>
 <script>
   if (window.pdfjsLib) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -730,6 +738,76 @@ header.hero p {
     inputs[0].focus();
   });
 
+  // ---- Export (Excel / PDF) ----
+  var STATUS_LABELS = { match: "Match", mismatch: "Mismatch", incomplete: "Incomplete", empty: "No data" };
+  var STATUS_PDF_FILL = {
+    Match: [229, 245, 233],
+    Mismatch: [252, 235, 233],
+    Incomplete: [251, 241, 221],
+    "No data": [238, 241, 242]
+  };
+
+  function buildExportRows() {
+    return FIELDS.map(function (field) {
+      var result = evaluateField(field);
+      return {
+        label: field.label,
+        report: result.raw.report,
+        freedom: result.raw.freedom,
+        trf: result.raw.trf,
+        status: STATUS_LABELS[result.status]
+      };
+    });
+  }
+
+  function exportFileNameStamp() {
+    var d = new Date();
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+
+  function currentTemplateLabel() {
+    var opt = templateSelect.options[templateSelect.selectedIndex];
+    return opt ? opt.text : "Report Checker";
+  }
+
+  document.getElementById("exportExcelBtn").addEventListener("click", function () {
+    if (!window.XLSX) return;
+    var rows = buildExportRows();
+    var data = [["Field", "Report", "Freedom Screenshot", "TRF", "Status"]];
+    rows.forEach(function (r) { data.push([r.label, r.report, r.freedom, r.trf, r.status]); });
+    var ws = XLSX.utils.aoa_to_sheet(data);
+    ws["!cols"] = [{ wch: 22 }, { wch: 28 }, { wch: 28 }, { wch: 28 }, { wch: 12 }];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Comparison");
+    XLSX.writeFile(wb, "report-checker-" + currentTemplateKey + "-" + exportFileNameStamp() + ".xlsx");
+  });
+
+  document.getElementById("exportPdfBtn").addEventListener("click", function () {
+    if (!window.jspdf) return;
+    var rows = buildExportRows();
+    var doc = new jspdf.jsPDF({ orientation: "landscape" });
+    doc.setFontSize(14);
+    doc.text("Report Checker — " + currentTemplateLabel(), 14, 16);
+    doc.setFontSize(9);
+    doc.setTextColor(110);
+    doc.text("Generated " + new Date().toLocaleString(), 14, 22);
+    doc.autoTable({
+      startY: 27,
+      head: [["Field", "Report", "Freedom Screenshot", "TRF", "Status"]],
+      body: rows.map(function (r) { return [r.label, r.report, r.freedom, r.trf, r.status]; }),
+      styles: { fontSize: 8, cellPadding: 3, overflow: "linebreak" },
+      headStyles: { fillColor: [14, 124, 134] },
+      columnStyles: { 0: { fontStyle: "bold", cellWidth: 36 } },
+      didParseCell: function (hook) {
+        if (hook.section === "body" && hook.column.index === 4) {
+          var fill = STATUS_PDF_FILL[hook.cell.raw];
+          if (fill) hook.cell.styles.fillColor = fill;
+        }
+      }
+    });
+    doc.save("report-checker-" + currentTemplateKey + "-" + exportFileNameStamp() + ".pdf");
+  });
+
   // ---- OCR (Tesseract.js, on-device, no API key) ----
   // Tesseract reads clean label:value PDF text reliably even at modest
   // resolution, but dense UI screenshots (small table text, icon-heavy rows)
@@ -796,12 +874,8 @@ header.hero p {
     });
   }
 
-  function renderPdfFirstPageToCanvas(file) {
-    return file.arrayBuffer().then(function (buf) {
-      return pdfjsLib.getDocument({ data: buf }).promise;
-    }).then(function (pdf) {
-      return pdf.getPage(1);
-    }).then(function (page) {
+  function renderPdfFirstPageToCanvas(pdf) {
+    return pdf.getPage(1).then(function (page) {
       var viewport = page.getViewport({ scale: 3 });
       var canvas = document.createElement("canvas");
       canvas.width = viewport.width;
@@ -813,14 +887,92 @@ header.hero p {
     });
   }
 
+  // Rebuilds a reading-order, layout-ish text block from pdf.js's raw
+  // positioned glyph runs — the same idea as poppler's `pdftotext -layout`.
+  // Runs are grouped into lines by y-coordinate, then joined left-to-right
+  // with a run of spaces sized to the x-gap between them, so two side-by-side
+  // "label : value" columns stay recognisable as two columns on one line
+  // instead of colliding into one run of text.
+  function reconstructLayoutText(items) {
+    var rows = items.map(function (item) {
+      var tx = item.transform;
+      return { str: item.str, x: tx[4], y: tx[5], width: item.width || 0, height: Math.abs(tx[3]) || 10 };
+    }).filter(function (it) { return it.str !== ""; });
+    if (!rows.length) return "";
+
+    // PDF y grows upward, so the top-of-page line comes first when sorted
+    // descending; within a line, left-to-right by x.
+    rows.sort(function (a, b) { return b.y - a.y || a.x - b.x; });
+
+    var lines = [];
+    var LINE_TOL = 2.5;
+    rows.forEach(function (it) {
+      var line = lines[lines.length - 1];
+      if (line && Math.abs(line.y - it.y) <= LINE_TOL) {
+        line.items.push(it);
+        line.y = (line.y + it.y) / 2;
+      } else {
+        lines.push({ y: it.y, items: [it] });
+      }
+    });
+
+    return lines.map(function (line) {
+      line.items.sort(function (a, b) { return a.x - b.x; });
+      var text = "";
+      var prevEnd = null;
+      line.items.forEach(function (it) {
+        if (prevEnd !== null) {
+          var gap = it.x - prevEnd;
+          // A run's own width / string length is a bad per-glyph estimate
+          // (a run can be a single "."  or a 20-char phrase, so this swings
+          // wildly run to run); line height is the stable unit instead. This
+          // is only shaping the human-readable text dump — field parsing
+          // below never relies on *how many* spaces separate two runs.
+          var charUnit = Math.max(it.height, 6);
+          var spaces = gap <= charUnit ? 1 : Math.min(Math.round(gap / (charUnit * 0.5)), 20);
+          text += new Array(spaces + 1).join(" ");
+        }
+        text += it.str;
+        prevEnd = it.x + it.width;
+      });
+      return text;
+    }).join("\n");
+  }
+
+  // Most "Report" PDFs here are born-digital (generated straight from the
+  // LIS), not scanned — they already carry a real, perfectly-accurate text
+  // layer, so asking Tesseract to re-read a rasterized image of them only
+  // introduces OCR noise where none has to exist (confirmed directly: the
+  // same PDFs that render fine here come back from `pdftotext` with full,
+  // clean label:value text). Scanned/handwritten forms (the TRFs) have no
+  // such layer — `getTextContent()` on those returns next to nothing — so
+  // this falls back to the original rasterize-and-OCR path whenever the
+  // extracted layer looks too sparse to be real content.
+  var MIN_TEXT_LAYER_CHARS = 80;
+  function extractPdfTextLayer(pdf) {
+    return pdf.getPage(1).then(function (page) {
+      return page.getTextContent();
+    }).then(function (content) {
+      return reconstructLayoutText(content.items);
+    });
+  }
+
+  function runTesseract(input) {
+    return Tesseract.recognize(input, "eng").then(function (result) { return result.data.text || ""; });
+  }
+
   function ocrFile(file) {
-    var inputPromise = file.type === "application/pdf"
-      ? renderPdfFirstPageToCanvas(file)
-      : preprocessImageForOcr(file);
-    return inputPromise.then(function (input) {
-      return Tesseract.recognize(input, "eng");
-    }).then(function (result) {
-      return result.data.text || "";
+    if (file.type !== "application/pdf") {
+      return preprocessImageForOcr(file).then(runTesseract);
+    }
+    return file.arrayBuffer().then(function (buf) {
+      return pdfjsLib.getDocument({ data: buf }).promise;
+    }).then(function (pdf) {
+      return extractPdfTextLayer(pdf).then(function (text) {
+        var meaningfulChars = (text.match(/[A-Za-z0-9]/g) || []).length;
+        if (meaningfulChars >= MIN_TEXT_LAYER_CHARS) return text;
+        return renderPdfFirstPageToCanvas(pdf).then(runTesseract);
+      });
     });
   }
 
@@ -869,10 +1021,44 @@ header.hero p {
   var HEADER_JUNK = ["patient mobile", "age/sex", "sex", "gender", "doctor mobile",
     "centre", "rate type", "department", "investigation", "source", "remarks",
     "pro", "lab no", "sin no", "entry datetime", "s.no", "mobile", "age",
-    "doctor", "date", "no", "or", "id", "name"];
+    "doctor", "date", "no", "or", "id", "name", "type", "collection"];
   function looksLikeRealValue(v) {
     var norm = v.toLowerCase().replace(/[.\s]+$/, "").trim();
     return norm.length > 0 && HEADER_JUNK.indexOf(norm) === -1;
+  }
+
+  // Catches OCR noise standing in for a handwritten field (common on the TRF,
+  // which is filled in by hand rather than printed) — a label matched fine,
+  // but what follows is symbol soup, not a plausible name/doctor/hospital.
+  // Requires mostly letters, no telltale OCR-garbage punctuation, and at
+  // least one vowel (real words have one; dense noise usually doesn't).
+  function looksLikePlausibleText(v) {
+    var s = (v || "").trim();
+    if (!s) return false;
+    if (/[{}\[\]~^|<>@]/.test(s)) return false;
+    var nonSpace = s.replace(/\s+/g, "");
+    if (!nonSpace) return false;
+    var letters = (nonSpace.match(/[A-Za-z]/g) || []).length;
+    if (letters / nonSpace.length < 0.6) return false;
+    if (!/[aeiouAEIOU]/.test(s)) return false;
+    return true;
+  }
+  function looksLikeRealName(v) { return looksLikeRealValue(v) && looksLikePlausibleText(v); }
+
+  // Strips a trailing OCR/table artifact left dangling on an otherwise-good
+  // capture: a bare trailing dash ("RHEA HEALTHCARE PVT LTD -") from a label
+  // column that ran on, or a closing bracket/quote with no matching opener
+  // (a misread letter, e.g. "PAULRA)" for "PAULRAJ"). Left in place these
+  // read as OCR errors even though the rest of the value is good.
+  function stripTrailingJunk(v) {
+    var s = (v || "").replace(/[\s\-]+$/, "");
+    var closers = { ")": "(", "]": "[", "}": "{" };
+    var guard = 0;
+    while (s && closers[s[s.length - 1]] && guard++ < 5) {
+      if (s.indexOf(closers[s[s.length - 1]]) !== -1) break;
+      s = s.slice(0, -1).replace(/[\s\-]+$/, "");
+    }
+    return s;
   }
 
   function findFallbackNumericId(text) {
@@ -957,7 +1143,12 @@ header.hero p {
   function findTitledName(text) {
     // Boundary after the name also accepts a quote/punctuation mark, since
     // OCR sometimes wraps a cell's text in stray quotes ("'MRS.PAVITHRA'").
-    var m = text.match(/\b((?:MRS?|MS|DR)\.?\s*[A-Z][A-Za-z.]*(?:\s+[A-Z][A-Za-z.']*){0,4})(?=['"‘’“”]?\s*(?:\d|\n|$|[.,;:)]))/);
+    // The name word requires 2+ letters after its capital (not just a bare
+    // star-of-zero) — otherwise "MRS?" can match "MR" and let the mandatory
+    // [A-Z] absorb the real title's own "S", so "MRS." alone (title plus
+    // the period right after it) falsely satisfies the whole pattern and
+    // returns "MRS" as if that were a name.
+    var m = text.match(/\b((?:MRS?|MS|DR)\.?\s*[A-Z][A-Za-z]{2,}(?:\s+[A-Z][A-Za-z']{2,}){0,4})(?=['"‘’“”]?\s*(?:\d|\n|$|[.,;:)]))/);
     return m ? m[1].trim() : "";
   }
 
@@ -981,39 +1172,71 @@ header.hero p {
     return out;
   }
 
-  var STOP = "(?=\\n|$|\\s{2,}\\S|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Date|Collection|Received|Biopsy\\s*(?:Date|Performed)|Gestational|UHID)\\b|(?:W|S|D|C)\\/O\\b)";
+  // No generic "N+ spaces means a new column" rule here on purpose: a PDF's
+  // own text layer already comes back with each run's internal word-spacing
+  // intact as literal single spaces (pdf.js groups a run like "Dr. Shwetha
+  // Anand Baratikkae" into one string already), while the *inter-column* gap
+  // — reconstructed from each run's x-position — is really just whatever
+  // padding that PDF used to right-align its labels to a fixed colon column,
+  // which varies wildly by label length (single digits up to 180+ in the
+  // same document) with no size that reliably separates "new field" from
+  // "padding before this field's own colon". A whitespace-count rule here
+  // once truncated values like "23 Weeks / 1 Day" or "Peripheral Blood" at
+  // the first incidental wide gap. The explicit label list below is what
+  // actually catches a real "next field" boundary. The one gap shape that
+  // *is* unambiguous: a wide gap landing right on a bare colon. That only
+  // happens when the field whose colon it is has had its own label word
+  // wrapped away onto an earlier reconstructed line (a two-column form
+  // splitting e.g. "Sample receipt date" so "date" strands on its own line
+  // below, leaving this line's next real token as just "... : 21.10.2026"
+  // with no label text in front of it to anchor on).
+  var STOP = "(?=\\n|$|\\s{3,}:|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Date|Collection|Received|Report|Biopsy\\s*(?:Date|Performed)|Gestational|UHID)\\b|(?:W|S|D|C)\\/O\\b)";
 
   function parseOcrText(text) {
     var t = (text || "").replace(/\r/g, "");
     var out = {};
 
     out.name = firstValidMatch(t, [
-      new RegExp("(?:patient\\s*name|full\\s*name)\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
-    ], looksLikeRealValue);
+      new RegExp("(?:patient\\s*name|full\\s*name)\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
+    ], looksLikeRealName);
     out.age = firstMatch(t, [
-      /age\s*[:\-]?\s*([0-9]{1,3}\s*(?:years?|yrs?|y|months?|mon?s?|m|days?|d)\b)/i,
-      /age\s*[:\-]?\s*([0-9]{1,3})\b/i
+      // \b before "age" matters: without it this also matches inside "Page"
+      // (as in a "Page 1 of 6" footer), "Average", "Image", etc., since none
+      // of those have a real word boundary before the "age" substring.
+      /\bage\s*[:\-]?\s*([0-9]{1,3}\s*(?:years?|yrs?|y|months?|mon?s?|m|days?|d)\b)/i,
+      /\bage\s*[:\-]?\s*([0-9]{1,3})\b/i,
+      // Combined "Gender/ Age : Female / 35 Years" or "Date of Birth / Age :
+      // 24/10/2000 / 28" fields print the age after a slash rather than
+      // right after the word "age" itself, which the patterns above never
+      // reach — anchor on whatever precedes that slash instead (a gender
+      // word, or a DOB-shaped date).
+      /(?:female|male)\s*\/\s*([0-9]{1,3}\s*(?:years?|yrs?|y)?)\b/i,
+      /\d{1,2}\/\d{1,2}\/\d{2,4}\s*\/\s*([0-9]{1,3})\b/
     ]);
     out.gender = firstMatch(t, [
-      /(?:gender|sex)\s*[:\-]?\s*(female|male|\bF\b|\bM\b)/i
+      /\b(?:gender|sex)\s*[:\-]?\s*(female|male|\bF\b|\bM\b)/i
     ]);
     out.uhid = firstValidMatch(t, [
       /\bPIN\s*[:\-]?\s*([A-Za-z0-9]+)/i,
       /\bUHID\s*[:\-]?\s*([A-Za-z0-9\-]+)/i
     ], isPlausibleId);
     out.doctor = firstValidMatch(t, [
-      new RegExp("(?:referring\\s*clinician|referring\\s*doctor|clinical\\s*name|ref(?:erred)?\\s*by)\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
-    ], looksLikeRealValue);
+      new RegExp("(?:referring\\s*clinician|referring\\s*doctor|clinical\\s*name|ref(?:erred)?\\s*by)\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
+    ], looksLikeRealName);
     out.hospital = firstValidMatch(t, [
-      new RegExp("hospital\\s*\\/?\\s*clinic\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i"),
-      new RegExp("hospital\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
-    ], looksLikeRealValue);
+      new RegExp("hospital\\s*\\/?\\s*clinic\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i"),
+      new RegExp("hospital\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
+    ], looksLikeRealName);
     out.sampleId = firstValidMatch(t, [
       /\b(?:sample\s*number|sample\s*no\.?|lab\s*no\.?|sin\s*no\.?)\s*[:\-]?\s*([A-Za-z0-9\-]+)/i
     ], isPlausibleId);
     out.collectionDate = firstMatch(t, [
-      /(?:sample\s*collection\s*date|collection\s*date|entry\s*date\s*time?)\s*[:\-]?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4})/i,
-      /(?:sample\s*collection\s*date|collection\s*date)\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
+      // "date" made optional: a two-column PDF layout can wrap a label like
+      // "SAMPLE COLLECTION DATE" so "DATE" lands on the next visual line,
+      // after the value has already been printed ("SAMPLE COLLECTION :
+      // 31-08-2026\nPALAKKAD DATE") — requiring it adjacent missed the date.
+      /(?:sample\s*collection(?:\s*date)?|collection(?:\s*date)?|entry\s*date\s*time?)\s*[:\-]?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4})/i,
+      /(?:sample\s*collection(?:\s*date)?|collection(?:\s*date)?)\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
     ]);
 
     // Second pass: fill anything still empty from structural/positional
@@ -1032,30 +1255,53 @@ header.hero p {
 
     if (!out.uhid) out.uhid = findLabPin(t);
     if (!out.sampleId) out.sampleId = findFallbackNumericId(t);
-    if (!out.doctor) out.doctor = findDuplicatedPhrase(t);
-    if (!out.hospital) out.hospital = findRateTypeHospital(t);
+    // These positional/structural fallbacks have no label to anchor on, so
+    // gate each on looking like real text — otherwise a handwritten TRF's
+    // illegible OCR noise (no clean label match to reject it) can slip
+    // through as a confident-looking value.
+    if (!out.doctor) {
+      var dupPhrase = findDuplicatedPhrase(t);
+      if (looksLikePlausibleText(dupPhrase)) out.doctor = dupPhrase;
+    }
+    if (!out.hospital) {
+      var rateHospital = findRateTypeHospital(t);
+      if (looksLikePlausibleText(rateHospital)) out.hospital = rateHospital;
+    }
     if (!out.collectionDate) out.collectionDate = findPrintedTimestamp(t);
-    if (!out.name) out.name = findTitledName(t);
+    if (!out.name) {
+      var titledName = findTitledName(t);
+      if (looksLikePlausibleText(titledName)) out.name = titledName;
+    }
 
     // PGT-A-specific fields (only populated when the template includes them;
     // harmless no-ops otherwise since nothing reads these keys in that case).
-    out.specimenType = firstMatch(t, [
-      new RegExp("specimen\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
-    ]);
+    out.specimenType = firstValidMatch(t, [
+      // Negative lookahead excludes "Specimen Type"/"Specimen Collection
+      // Date"/"Specimen Receipt Date" — other headers on the same form that
+      // start with the same word but aren't this field (a bare "Specimen :"
+      // label is what this one actually looks like on the Report PDF).
+      new RegExp("specimen(?!\\s*(?:type|collection|receipt)\\b)\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
+    ], looksLikeRealValue);
+    // "date" made optional on both — same two-column wrap as collectionDate
+    // above ("Sample receipt\ndate : 21.10.2026" with the value already on
+    // the "receipt" line and only the bare word "date" pushed to the next).
     out.biopsyDate = firstMatch(t, [
-      /biopsy\s*date\s*[:\-]?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4})/i,
-      /biopsy\s*date\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
+      /biopsy(?:\s*date)?\s*[:\-]?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4})/i,
+      /biopsy(?:\s*date)?\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
     ]);
     out.receiptDate = firstMatch(t, [
-      /(?:sample\s*)?receipt\s*date\s*[:\-]?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4})/i,
-      /(?:sample\s*)?receipt\s*date\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
+      /(?:sample\s*)?receipt(?:\s*date)?\s*[:\-]?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4})/i,
+      /(?:sample\s*)?receipt(?:\s*date)?\s*[:\-]?\s*([0-9]{1,2}[\s\-][A-Za-z]{3,9}[\s\-,]+[0-9]{2,4})/i
     ]);
     out.biopsyBy = firstValidMatch(t, [
-      new RegExp("biopsy\\s*performed\\s*by\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
-    ], looksLikeRealValue);
-    out.partnerName = firstMatch(t, [
-      new RegExp("\\b(?:W\\/O|S\\/O|D\\/O|C\\/O)\\s*[:\\-]?\\s*(?:MR\\.?|MRS\\.?|MS\\.?|DR\\.?)?\\s*([^\\n]+?)" + STOP, "i")
-    ]);
+      // "by" made optional for the same two-column wrapping reason as
+      // collectionDate above — "BIOPSY PERFORMED : <value>" with a lone
+      // "BY" left stranded on the next line.
+      new RegExp("biopsy\\s*performed(?:\\s*by)?\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
+    ], looksLikeRealName);
+    out.partnerName = firstValidMatch(t, [
+      new RegExp("\\b(?:W\\/O|S\\/O|D\\/O|C\\/O)\\s*[:\\-]?\\s*(?:MR\\.?|MRS\\.?|MS\\.?|DR\\.?)?\\s*([^\\n]*?)" + STOP, "i")
+    ], looksLikeRealName);
     out.embryoIds = (function () {
       var ids = [];
       var re = /\bEMBRYO\s*[:\-]?\s*([A-Z]{1,4}\d{1,3})\b/gi;
@@ -1076,10 +1322,10 @@ header.hero p {
 
     // QF-PCR / prenatal-test fields
     out.gestationalAge = firstMatch(t, [
-      new RegExp("gestational\\s*age\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
+      new RegExp("gestational\\s*age\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
     ]);
     out.pregnancyType = firstMatch(t, [
-      new RegExp("pregnancy\\s*type\\s*[:\\-]?\\s*([^\\n]+?)" + STOP, "i")
+      new RegExp("pregnancy\\s*type\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
     ]);
 
     // A label that sits on its own line (common on forms) can get swept into
@@ -1090,7 +1336,7 @@ header.hero p {
     out.doctor = (out.doctor || "").replace(LEADING_LABEL, "");
     out.hospital = (out.hospital || "").replace(/^hospital\s*\/?\s*clinic\s*[:\-]?\s*/i, "");
 
-    Object.keys(out).forEach(function (k) { out[k] = cleanLine(out[k]); });
+    Object.keys(out).forEach(function (k) { out[k] = stripTrailingJunk(cleanLine(out[k])); });
     return out;
   }
 
@@ -1150,7 +1396,10 @@ header.hero p {
     qfpcr: { report: { gender: "Female" } },
     // YCMD (Y-chromosome microdeletion) only applies to male patients, and
     // the report never states gender either.
-    ycmd: { report: { gender: "Male" } }
+    ycmd: { report: { gender: "Male" } },
+    // NIPT (non-invasive prenatal screening) is likewise always run on a
+    // pregnant patient, and the report has no gender field at all.
+    nipt: { report: { gender: "Female" } }
   };
   function getTemplateDefault(templateKey, srcKey, fieldKey) {
     var t = TEMPLATE_DEFAULTS[templateKey];
