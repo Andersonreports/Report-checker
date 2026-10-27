@@ -655,14 +655,11 @@ header.hero p {
       dotEl.className = cls ? "dot dot-" + cls : "dot";
       rowEl.className  = cls ? "field-row row-" + cls : "field-row";
 
-      // Tooltip on mismatch or missing rows: show all source values so the
-      // user can see at a glance what each source says for this field.
-      if (cls === "mismatch" || cls === "empty") {
-        var tipLines = SOURCES.map(function (s) {
-          var v = result.raw[s.key].trim();
-          return s.label + ": " + (v || "—");
-        });
-        rowEl.setAttribute("data-tip", tipLines.join("\n"));
+      // Brief hover note explaining what each colour means.
+      if (cls === "mismatch") {
+        rowEl.setAttribute("data-tip", "🔴 Mismatch — this value conflicts with another source");
+      } else if (cls === "empty") {
+        rowEl.setAttribute("data-tip", "🟡 Missing data — another source has a value here");
       } else {
         rowEl.removeAttribute("data-tip");
       }
