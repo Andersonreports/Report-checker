@@ -23,7 +23,7 @@
   --incomplete: #9a6600;
   --incomplete-bg: #fbf1dd;
   --empty: #7c8a90;
-  --empty-bg: #eef1f2;
+  --empty-bg: #fffde7;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -43,7 +43,7 @@
     --incomplete: #f2c04b;
     --incomplete-bg: #352a0c;
     --empty: #8b999e;
-    --empty-bg: #1c2529;
+    --empty-bg: #3a3200;
     color-scheme: dark;
   }
 }
@@ -63,7 +63,7 @@
   --incomplete: #f2c04b;
   --incomplete-bg: #352a0c;
   --empty: #8b999e;
-  --empty-bg: #1c2529;
+  --empty-bg: #3a3200;
   color-scheme: dark;
 }
 
@@ -271,6 +271,7 @@ header.hero p {
 .field-row.row-match { background: var(--match-bg); }
 .field-row.row-mismatch { background: var(--mismatch-bg); }
 .field-row.row-incomplete { background: var(--incomplete-bg); }
+.field-row.row-empty { background: var(--empty-bg); }
 .field-row .dot {
   width: 9px;
   height: 9px;
@@ -593,7 +594,7 @@ header.hero p {
         cls = result.differing.indexOf(src.label) !== -1 ? "mismatch" : "match";
       } else if (result.status === "incomplete") {
         if (result.missing.indexOf(src.label) !== -1) {
-          cls = "mismatch";
+          cls = "empty";  // source has no value → yellow (missing, not wrong)
         } else {
           // Present in 2 of 3 sources: green if those two agree with each
           // other, red if even the two we have already disagree.
