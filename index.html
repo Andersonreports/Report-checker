@@ -391,7 +391,7 @@ header.hero p {
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/5.0.9/jspdf.plugin.autotable.min.js"></script>
 <script>
@@ -784,45 +784,58 @@ header.hero p {
     if (!window.XLSX) return;
     var rows = buildExportRows();
     var COLS = ["A", "B", "C", "D", "E"];
-    var header = ["Field", "Report", "Freedom Screenshot", "TRF", "Status"];
-    var data = [header];
+    var templateName = currentTemplateLabel();
+    // Row 1: merged title with template name + date
+    // Row 2: column headers
+    // Row 3+: data
+    var colHeader = ["Field", "Report", "Freedom Screenshot", "TRF", "Status"];
+    var data = [
+      [templateName + " — Report Checker (" + exportFileNameStamp() + ")", "", "", "", ""],
+      colHeader
+    ];
     rows.forEach(function (r) { data.push([r.label, r.report, r.freedom, r.trf, r.status]); });
     var ws = XLSX.utils.aoa_to_sheet(data);
     ws["!cols"] = [{ wch: 24 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 14 }];
     ws["!ref"] = "A1:E" + data.length;
+    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }];  // merge title row A1:E1
 
-    function xlCell(rgb, bold, whiteText) {
-      return {
-        fill: { patternType: "solid", fgColor: { rgb: rgb } },
-        font: { bold: !!bold, color: { rgb: whiteText ? "FFFFFF" : "222222" } },
-        alignment: { wrapText: true, vertical: "center" }
-      };
-    }
+    function xlFill(rgb) { return { patternType: "solid", fgColor: { rgb: rgb } }; }
+    function xlFont(rgb, bold) { return { color: { rgb: rgb }, bold: !!bold, sz: 11 }; }
+    var CENTER = { horizontal: "center", vertical: "center", wrapText: true };
+    var VCENTER = { vertical: "center", wrapText: true };
 
-    // Header row
-    COLS.forEach(function (col) {
-      var addr = col + "1";
-      if (!ws[addr]) ws[addr] = { t: "s", v: header[COLS.indexOf(col)] };
-      ws[addr].s = xlCell("0E7C86", true, true);
-      ws[addr].s.alignment.horizontal = "center";
+    // Row 1: title
+    var titleCell = ws["A1"];
+    if (!titleCell) titleCell = ws["A1"] = { t: "s", v: data[0][0] };
+    titleCell.s = { fill: xlFill("1A4C5B"), font: { color: { rgb: "FFFFFF" }, bold: true, sz: 13 }, alignment: CENTER };
+
+    // Row 2: column headers (teal)
+    COLS.forEach(function (col, ci) {
+      var addr = col + "2";
+      if (!ws[addr]) ws[addr] = { t: "s", v: colHeader[ci] };
+      ws[addr].s = { fill: xlFill("0E7C86"), font: xlFont("FFFFFF", true), alignment: CENTER };
     });
 
-    // Data rows
+    // Row 3+: data rows
     rows.forEach(function (r, ri) {
-      var rowNum = ri + 2;
+      var rowNum = ri + 3;
       var dataFill = STATUS_XL_FILL[r.status] || "FFFFFF";
       var vals = [r.label, r.report, r.freedom, r.trf, r.status];
       COLS.forEach(function (col, ci) {
         var addr = col + rowNum;
         if (!ws[addr]) ws[addr] = { t: "s", v: vals[ci] || "" };
-        var isFieldCol = ci === 0;
-        ws[addr].s = xlCell(isFieldCol ? "F5F0E4" : dataFill, isFieldCol, false);
+        var isField = ci === 0;
+        ws[addr].s = {
+          fill: xlFill(isField ? "F5F0E4" : dataFill),
+          font: xlFont("222222", isField),
+          alignment: VCENTER
+        };
       });
     });
 
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Comparison");
-    XLSX.writeFile(wb, "report-checker-" + currentTemplateKey + "-" + exportFileNameStamp() + ".xlsx");
+    XLSX.writeFile(wb, "report-checker-" + currentTemplateKey + "-" + exportFileNameStamp() + ".xlsx", { cellStyles: true });
   });
 
   document.getElementById("exportPdfBtn").addEventListener("click", function () {
