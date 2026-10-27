@@ -1564,6 +1564,19 @@ header.hero p {
     updateAll();
   }
   templateSelect.addEventListener("change", function () {
+    // Clear all field values and reset the color-active state so cells don't
+    // carry over colors from a previous template's upload session.
+    var inputs = sourcesWrap.querySelectorAll("input.field-value");
+    inputs.forEach(function (inp) { inp.value = ""; });
+    SOURCES.forEach(function (src) {
+      var statusEl = document.getElementById("status-" + src.key);
+      var detailsEl = document.getElementById("details-" + src.key);
+      var fileInput = document.getElementById("file-" + src.key);
+      if (statusEl) { statusEl.className = "upload-status"; statusEl.innerHTML = ""; }
+      if (detailsEl) detailsEl.hidden = true;
+      if (fileInput) fileInput.value = "";
+    });
+    document.querySelector(".page").classList.remove("has-uploads");
     applyTemplate(templateSelect.value);
   });
   applyTemplate(templateSelect.value);
