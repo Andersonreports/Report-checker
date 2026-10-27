@@ -271,7 +271,8 @@ header.hero p {
 .field-row.row-match { background: var(--match-bg); }
 .field-row.row-mismatch { background: var(--mismatch-bg); }
 .field-row.row-incomplete { background: var(--incomplete-bg); }
-.field-row.row-empty { background: var(--empty-bg); }
+/* yellow only activates once at least one source file has been uploaded */
+.has-uploads .field-row.row-empty { background: var(--empty-bg); }
 .field-row .dot {
   width: 9px;
   height: 9px;
@@ -735,6 +736,7 @@ header.hero p {
       detailsEl.hidden = true;
       fileInput.value = "";
     });
+    document.querySelector(".page").classList.remove("has-uploads");
     updateAll();
     inputs[0].focus();
   });
@@ -1466,6 +1468,7 @@ header.hero p {
     var detailsEl = document.getElementById("details-" + src.key);
     var ocrTextEl = document.getElementById("ocrtext-" + src.key);
 
+    document.querySelector(".page").classList.add("has-uploads");
     statusEl.className = "upload-status is-busy";
     statusEl.innerHTML = '<span class="spinner"></span><span>Reading ' + escapeHtml(file.name) + '…</span>';
     detailsEl.hidden = true;
