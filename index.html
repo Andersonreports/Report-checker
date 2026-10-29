@@ -390,6 +390,21 @@ header.hero p {
 #exportExcelBtn, #exportPdfBtn { color: var(--accent); border-color: var(--accent); }
 #exportExcelBtn:hover, #exportPdfBtn:hover { background: var(--accent-soft); }
 
+.gemini-badge {
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.gemini-badge:hover { color: #4285f4; border-color: #4285f4; }
+.gemini-badge.is-active { color: var(--match); border-color: var(--match); border-style: solid; }
+
 @media (max-width: 860px) {
   .sources { grid-template-columns: 1fr; }
 }
@@ -591,11 +606,15 @@ header.hero p {
       card.className = "source-card";
       card.setAttribute("data-source", src.key);
 
+      var geminiHtml = src.key === "trf"
+        ? '<button class="gemini-badge" id="gemini-badge" type="button">⚡ Set Gemini key</button>'
+        : "";
       var headerHtml =
         '<div class="source-card-header">' +
         "<h2>" + src.label + "</h2>" +
         '<label class="upload-btn" for="file-' + src.key + '">' + UPLOAD_ICON + "<span>Upload image or PDF</span></label>" +
         '<input type="file" id="file-' + src.key + '" accept="image/*,application/pdf">' +
+        geminiHtml +
         '<div class="upload-status" id="status-' + src.key + '"></div>' +
         "</div>";
 
@@ -624,6 +643,11 @@ header.hero p {
 
       card.innerHTML = headerHtml + fieldsHtml + footerHtml;
       sourcesWrap.appendChild(card);
+      if (src.key === "trf") {
+        var gb = document.getElementById("gemini-badge");
+        if (gb) gb.addEventListener("click", promptGeminiKey);
+        updateGeminiBadge();
+      }
     });
   }
 
@@ -1726,6 +1750,111 @@ header.hero p {
     return out;
   }
 
+  // ─── Gemini Vision API (TRF handwriting) ──────────────────────────────────
+  function getGeminiKey() { try { return localStorage.getItem("geminiApiKey") || ""; } catch (e) { return ""; } }
+  function saveGeminiKey(k) { try { localStorage.setItem("geminiApiKey", k); } catch (e) {} }
+
+  function promptGeminiKey() {
+    var k = prompt(
+      "Enter your Google Gemini API key for handwriting recognition on TRF forms.\n" +
+      "Get a free key at: https://aistudio.google.com/apikey\n" +
+      "(Stored only in this browser — sent only to Google's API.)",
+      getGeminiKey()
+    );
+    if (k === null) return;
+    saveGeminiKey(k.trim());
+    updateGeminiBadge();
+  }
+
+  function updateGeminiBadge() {
+    var badge = document.getElementById("gemini-badge");
+    if (!badge) return;
+    var hasKey = !!getGeminiKey();
+    badge.textContent = hasKey ? "⚡ Gemini Vision ✓" : "⚡ Set Gemini key";
+    badge.classList.toggle("is-active", hasKey);
+  }
+
+  function fileToBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function (e) { resolve(e.target.result); };
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  var GEMINI_FIELD_DESCS = {
+    name: "Patient full name",
+    age: "Patient age — number only (e.g. 34)",
+    gender: "Patient gender — Male or Female",
+    uhid: "Patient ID / UHID / barcode number",
+    doctor: "Referring doctor name (without Dr. prefix)",
+    hospital: "Hospital or clinic name",
+    sampleId: "Sample number or barcode",
+    collectionDate: "Collection date — DD/MM/YYYY format",
+    partnerName: "Partner or husband name",
+    specimenType: "Specimen type (e.g. Peripheral Blood, Semen)",
+    biopsyDate: "Biopsy date — DD/MM/YYYY",
+    receiptDate: "Sample receipt date — DD/MM/YYYY",
+    biopsyBy: "Biopsy performed by",
+    embryoIds: "Embryo IDs (e.g. PS1, PS2, PS3)",
+    gestationalAge: "Gestational age",
+    pregnancyType: "Pregnancy type"
+  };
+
+  function extractWithGemini(file, fields) {
+    var apiKey = getGeminiKey();
+    if (!apiKey) return Promise.resolve(null);
+
+    var fieldLines = fields.map(function (f) {
+      return '  "' + f.key + '": "' + (GEMINI_FIELD_DESCS[f.key] || f.label) + '"';
+    }).join(",\n");
+
+    var promptText =
+      "This is a handwritten medical test request form (TRF). Read ALL handwritten text carefully, including cursive.\n" +
+      "Extract the patient information and return ONLY a valid JSON object with exactly these keys.\n" +
+      "Use empty string \"\" for any field not visible or not filled in.\n\n" +
+      "{\n" + fieldLines + "\n}";
+
+    return fileToBase64(file).then(function (dataUrl) {
+      var base64 = dataUrl.split(",")[1];
+      var mime = (dataUrl.split(";")[0].split(":")[1]) || "image/jpeg";
+      return fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=" + apiKey,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [
+              { text: promptText },
+              { inline_data: { mime_type: mime, data: base64 } }
+            ]}]
+          })
+        }
+      );
+    }).then(function (res) {
+      if (!res.ok) {
+        return res.json().then(function (e) {
+          throw new Error((e.error && e.error.message) || ("Gemini API error " + res.status));
+        });
+      }
+      return res.json();
+    }).then(function (data) {
+      var text = (
+        data.candidates &&
+        data.candidates[0] &&
+        data.candidates[0].content &&
+        data.candidates[0].content.parts &&
+        data.candidates[0].content.parts[0] &&
+        data.candidates[0].content.parts[0].text
+      ) || "";
+      var m = text.match(/\{[\s\S]*\}/);
+      if (!m) return null;
+      return JSON.parse(m[0]);
+    });
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   // Delegated on the wrapper (not the individual file inputs) so uploads
   // keep working after buildSourceCards() rebuilds the cards on a template
   // switch, without needing to re-attach a listener each time.
@@ -1754,6 +1883,38 @@ header.hero p {
       ocrTextEl.textContent = text.trim() || "(no text found)";
       detailsEl.hidden = false;
 
+      function applyFields(parsed) {
+        var filledCount = 0;
+        FIELDS.forEach(function (field) {
+          var value = (parsed && parsed[field.key]) || getTemplateDefault(currentTemplateKey, src.key, field.key);
+          if (value) {
+            document.getElementById(field.key + "-" + src.key).value = value;
+            filledCount++;
+          }
+        });
+        updateAll();
+        return filledCount;
+      }
+
+      // TRF with Gemini key: Gemini Vision reads handwriting far better than
+      // Tesseract. Still run ocrFile() above so "View extracted text" has
+      // something useful, but override field values with Gemini's result.
+      if (src.key === "trf" && getGeminiKey()) {
+        statusEl.className = "upload-status is-busy";
+        statusEl.innerHTML = '<span class="spinner"></span><span>Reading with Gemini Vision…</span>';
+        extractWithGemini(file, FIELDS).then(function (geminiParsed) {
+          var count = applyFields(geminiParsed || {});
+          statusEl.className = "upload-status";
+          statusEl.innerHTML = geminiParsed
+            ? "<span>⚡ Gemini Vision — filled " + count + " of " + FIELDS.length + " field(s).</span>"
+            : "<span>Gemini returned no data — see raw OCR text below.</span>";
+        }).catch(function (err) {
+          statusEl.className = "upload-status is-error";
+          statusEl.textContent = "Gemini error: " + (err.message || err) + " — check your API key.";
+        });
+        return;
+      }
+
       var parsed = parseOcrText(text, src.key);
 
       // TRF images get a second pass: the MNIST digit recognizer fills any
@@ -1765,17 +1926,9 @@ header.hero p {
         : Promise.resolve(parsed);
 
       digitPass.then(function (finalParsed) {
-        var filledCount = 0;
-        FIELDS.forEach(function (field) {
-          var value = finalParsed[field.key] || getTemplateDefault(currentTemplateKey, src.key, field.key);
-          if (value) {
-            document.getElementById(field.key + "-" + src.key).value = value;
-            filledCount++;
-          }
-        });
+        var filledCount = applyFields(finalParsed);
         statusEl.className = "upload-status";
         statusEl.innerHTML = "<span>Scanned " + escapeHtml(file.name) + " — filled " + filledCount + " of " + FIELDS.length + " field(s). Check against the text below.</span>";
-        updateAll();
       });
     }).catch(function (err) {
       statusEl.className = "upload-status is-error";
