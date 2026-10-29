@@ -431,6 +431,7 @@ header.hero p {
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -482,7 +483,7 @@ header.hero p {
       .join(",");
   }
   function normalizeDate(str) {
-    var s = str.trim();
+    var s = str.trim().replace(/\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?\s*$/i, "").trim();
     if (!s) return "";
     var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     if (m) return m[1] + "-" + pad(m[2]) + "-" + pad(m[3]);
@@ -997,6 +998,43 @@ header.hero p {
     return canvas;
   }
 
+  // Adaptive (local-mean) threshold for handwritten forms. Each pixel is
+  // compared against the average of a blockSize×blockSize neighbourhood so
+  // uneven lighting or ink-density variation — common in TRF photos — can't
+  // trick a global cutoff. Faster than a naive sliding window because of the
+  // integral-image trick: the per-pixel window sum is four lookups O(1).
+  // blockSize 31, C 10 work well for Anderson's printed TRF form.
+  function adaptiveThresholdCanvas(canvas, blockSize, C) {
+    var ctx = canvas.getContext("2d");
+    var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var d = img.data, w = canvas.width, h = canvas.height;
+    var gray = new Uint8ClampedArray(w * h);
+    for (var i = 0; i < d.length; i += 4) {
+      gray[i >> 2] = 0 | (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+    }
+    // Integral image (Uint32 is safe: max = 255 * 2000 * 2000 ≈ 1.02B < 4.29B)
+    var sw = w + 1;
+    var S = new Uint32Array((h + 1) * sw);
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        S[(y+1)*sw+(x+1)] = gray[y*w+x] + S[y*sw+(x+1)] + S[(y+1)*sw+x] - S[y*sw+x];
+      }
+    }
+    var half = blockSize >> 1;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var x1=Math.max(x-half,0), y1=Math.max(y-half,0), x2=Math.min(x+half,w-1), y2=Math.min(y+half,h-1);
+        var cnt = (x2-x1+1)*(y2-y1+1);
+        var sum = S[(y2+1)*sw+(x2+1)] - S[y1*sw+(x2+1)] - S[(y2+1)*sw+x1] + S[y1*sw+x1];
+        var v = gray[y*w+x] < (sum/cnt - C) ? 0 : 255;
+        var p = (y*w+x) << 2;
+        d[p] = d[p+1] = d[p+2] = v;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+  }
+
   function loadImageElement(file) {
     return new Promise(function (resolve, reject) {
       var img = new Image();
@@ -1027,11 +1065,16 @@ header.hero p {
     return canvas;
   }
 
-  function preprocessImageForOcr(file) {
+  function preprocessImageForOcr(file, srcKey) {
     return loadImageElement(file).then(function (loaded) {
       var canvas = upscaleImageToCanvas(loaded.img);
       URL.revokeObjectURL(loaded.url);
-      return enhanceCanvasForOcr(canvas);
+      // TRF photos are handwritten on paper: adaptive thresholding handles
+      // uneven lighting and ink variation far better than the global cutoff
+      // tuned for Freedom's flat-colour LIS UI.
+      return srcKey === "trf"
+        ? adaptiveThresholdCanvas(canvas, 31, 10)
+        : enhanceCanvasForOcr(canvas);
     });
   }
 
@@ -1118,8 +1161,11 @@ header.hero p {
     });
   }
 
-  function runTesseract(input) {
-    // PSM 6 = single uniform block of text. The default PSM 3 (auto-segment)
+  function runTesseract(input, psm) {
+    // PSM 6 = single uniform block of text (default for Freedom/Report).
+    // PSM 11 = sparse text, used for TRF handwritten forms whose fields are
+    // scattered across the page rather than forming a contiguous block.
+    // PSM 6 was specifically chosen for Freedom because PSM 3 (auto-segment)
     // splits a wide LIS table into separate regions and reads columns out of
     // order, breaking the positional row-parsing in extractLisTableRow.
     // PSM 6 reads the entire canvas left-to-right top-to-bottom as one block,
@@ -1127,24 +1173,153 @@ header.hero p {
     // preserve_interword_spaces keeps cell gaps as spaces rather than merging
     // adjacent words from different columns.
     return Tesseract.recognize(input, "eng", {
-      tessedit_pageseg_mode: "6",
+      tessedit_pageseg_mode: psm || "6",
       preserve_interword_spaces: "1"
     }).then(function (result) { return result.data.text || ""; });
   }
 
-  function ocrFile(file) {
+  function ocrFile(file, srcKey) {
     if (file.type !== "application/pdf") {
-      return preprocessImageForOcr(file).then(runTesseract);
+      return preprocessImageForOcr(file, srcKey).then(function (canvas) {
+        // TRF: PSM 11 (sparse text) handles a handwritten form's scattered
+        // fields better than PSM 6 (uniform block), which was chosen only
+        // because Freedom's wide LIS table collapses into one block with it.
+        var psm = srcKey === "trf" ? "11" : "6";
+        return runTesseract(canvas, psm).then(function (text) {
+          return { text: text, canvas: canvas };
+        });
+      });
     }
     return file.arrayBuffer().then(function (buf) {
       return pdfjsLib.getDocument({ data: buf }).promise;
     }).then(function (pdf) {
       return extractPdfTextLayer(pdf).then(function (text) {
         var meaningfulChars = (text.match(/[A-Za-z0-9]/g) || []).length;
-        if (meaningfulChars >= MIN_TEXT_LAYER_CHARS) return text;
-        return renderPdfFirstPageToCanvas(pdf).then(runTesseract);
+        if (meaningfulChars >= MIN_TEXT_LAYER_CHARS) return { text: text, canvas: null };
+        return renderPdfFirstPageToCanvas(pdf).then(function (canvas) {
+          return runTesseract(canvas).then(function (t) { return { text: t, canvas: null }; });
+        });
       });
     });
+  }
+
+  // ---- MNIST digit recognizer (TRF second pass) ----
+  // Train a model on MNIST data using the approach at
+  // https://github.com/anujdutt9/Handwritten-Digit-Recognition-using-Deep-Learning
+  // then export to TF.js: tensorflowjs_converter --input_format keras model.h5 tfjs_model/
+  // Host the tfjs_model/ directory and point MNIST_MODEL_URL at model.json.
+  var MNIST_MODEL_URL = "https://storage.googleapis.com/tfjs-models/tfjs/mnist_transfer_cnn_v1/model.json";
+  var _mnistModel = null, _mnistLoading = null;
+
+  function getMnistModel() {
+    if (_mnistModel) return Promise.resolve(_mnistModel);
+    if (_mnistLoading) return _mnistLoading;
+    if (!MNIST_MODEL_URL || !window.tf) return Promise.resolve(null);
+    _mnistLoading = tf.loadLayersModel(MNIST_MODEL_URL).then(function (m) {
+      _mnistModel = m;
+      return m;
+    }).catch(function () { _mnistLoading = null; return null; });
+    return _mnistLoading;
+  }
+
+  // Connected-component bounding boxes of ink regions on a binarised canvas.
+  // Returns [{x, y, x2, y2, n}] sorted left-to-right, filtered to digit-plausible
+  // sizes (small noise and large non-digit blobs excluded).
+  function findDigitBoxes(canvas) {
+    var ctx = canvas.getContext("2d");
+    var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var d = img.data, w = canvas.width, h = canvas.height;
+    var lbl = new Int32Array(w * h);
+    var par = [0]; // index 0 = background sentinel
+    function find(x) { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; }
+    function unite(a, b) { a = find(a); b = find(b); if (a !== b) par[b] = a; }
+    var next = 1;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        if (d[(y*w+x)<<2] > 127) continue; // background (white after threshold)
+        var up = y > 0 ? lbl[(y-1)*w+x] : 0;
+        var lf = x > 0 ? lbl[y*w+x-1] : 0;
+        if (!up && !lf)       { lbl[y*w+x] = next; par.push(next); next++; }
+        else if (up && !lf)   { lbl[y*w+x] = find(up); }
+        else if (!up && lf)   { lbl[y*w+x] = find(lf); }
+        else                  { lbl[y*w+x] = find(up); unite(up, lf); }
+      }
+    }
+    var boxes = {};
+    for (var i = 0; i < lbl.length; i++) {
+      if (!lbl[i]) continue;
+      var r = find(lbl[i]);
+      var bx = i % w, by = (i / w) | 0;
+      var b = boxes[r] || (boxes[r] = { x: bx, y: by, x2: bx, y2: by, n: 0 });
+      if (bx < b.x) b.x = bx; if (bx > b.x2) b.x2 = bx;
+      if (by < b.y) b.y = by; if (by > b.y2) b.y2 = by;
+      b.n++;
+    }
+    return Object.values(boxes).filter(function (b) {
+      var bh = b.y2-b.y+1, bw = b.x2-b.x+1;
+      return b.n > 40 && bh > 8 && bh < h * 0.5 && bw < w * 0.4;
+    }).sort(function (a, b) { return a.x - b.x; });
+  }
+
+  // Render one ink-blob box to a 28×28 canvas in MNIST format:
+  // white digit centred on black background.
+  function boxToMnistCanvas(src, box) {
+    var SIZE = 28, PAD = 3;
+    var tmp = document.createElement("canvas");
+    tmp.width = tmp.height = SIZE;
+    var ctx = tmp.getContext("2d");
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    var bw = box.x2-box.x+1, bh = box.y2-box.y+1;
+    var scale = (SIZE - PAD*2) / Math.max(bw, bh, 1);
+    ctx.drawImage(src, box.x, box.y, bw, bh,
+      (SIZE - bw*scale)/2, (SIZE - bh*scale)/2, bw*scale, bh*scale);
+    // Binarised source: 0=ink, 255=paper. Invert for MNIST (ink should be bright).
+    var px = ctx.getImageData(0, 0, SIZE, SIZE);
+    for (var i = 0; i < px.data.length; i += 4) {
+      px.data[i] = 255 - px.data[i];
+      px.data[i+1] = 255 - px.data[i+1];
+      px.data[i+2] = 255 - px.data[i+2];
+    }
+    ctx.putImageData(px, 0, 0);
+    return tmp;
+  }
+
+  // MNIST second pass for TRF images: classify all digit blobs, group into
+  // sequences by x-gap, then use the longest plausible sequences to fill any
+  // numeric fields (sampleId, age) that Tesseract left empty.
+  function recognizeTrfDigits(canvas, parsed) {
+    return getMnistModel().then(function (model) {
+      if (!model) return parsed;
+      var boxes = findDigitBoxes(canvas);
+      if (!boxes.length) return parsed;
+      var preds = tf.tidy(function () {
+        var tensors = boxes.map(function (box) {
+          return tf.browser.fromPixels(boxToMnistCanvas(canvas, box), 1)
+            .toFloat().div(255).reshape([1, 28, 28, 1]);
+        });
+        return Array.from(model.predict(tf.concat(tensors, 0)).argMax(-1).dataSync());
+      });
+      // Group boxes into sequences: x-gap > 3% of canvas width = new field.
+      var GAP = canvas.width * 0.03;
+      var seqs = [], cur = "";
+      boxes.forEach(function (box, i) {
+        if (i > 0 && box.x - boxes[i-1].x2 > GAP) { if (cur) seqs.push(cur); cur = ""; }
+        cur += preds[i];
+      });
+      if (cur) seqs.push(cur);
+      seqs.sort(function (a, b) { return b.length - a.length; }); // longest first
+      var result = Object.assign({}, parsed);
+      if (!result.sampleId) {
+        var sid = seqs.find(function (s) { return s.length >= 7 && s.length <= 12; });
+        if (sid) result.sampleId = sid;
+      }
+      if (!result.age) {
+        var age = seqs.find(function (s) { var n = +s; return s.length <= 3 && n > 0 && n < 130; });
+        if (age) result.age = age;
+      }
+      return result;
+    }).catch(function () { return parsed; });
   }
 
   function cleanLine(s) {
@@ -1345,7 +1520,7 @@ header.hero p {
     var out = {};
     // Allow O (letter) for 0 (digit) in numeric positions — a common OCR
     // substitution in small-font LIS table cells. Applies to day, year, hour.
-    var dateMatch = text.match(/([0-9O]{1,2}[-\/][A-Za-z]{3,9}[-\/][0-9O]{2,4}\s+[0-9O]{1,2}:\d{2}\s*[AP]M)([\s\S]{0,500})/i);
+    var dateMatch = text.match(/([0-9O]{1,2}[-\/][A-Za-z]{3,9}[-\/][0-9O]{2,4}\s+[0-9O]{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)([\s\S]{0,500})/i);
     if (dateMatch) {
       // Normalise letter-O back to digit-0 in the captured date string so the
       // value stored is a clean date, not the OCR-garbled form.
@@ -1365,7 +1540,7 @@ header.hero p {
     // Date-free fallback: when the timestamp column is too garbled to anchor
     // on, look for the LabNo → SINNo → MR/MRS/MS name chain directly.
     // The Freedom table always has these three columns adjacent in that order.
-    var noDate = text.match(/\b(\d{7,9})\s{1,6}(\d{10,13})\s{1,6}((?:MRS?|MS|DR)[.\-]?\s*[A-Z][A-Za-z\s.'-]{1,40}?)(?=\s{2,}|\s+[0-9O]{1,3}\s+Y|\n)/);
+    var noDate = text.match(/\b(\d{7,9})\s{1,6}(\d{10,13})\s{1,6}((?:(?:MRS?|MS|DR)[.\-]?\s*)?[A-Z][A-Za-z\s.'-]{3,40}?)(?=\s{2,}|\s+[0-9O]{1,3}\s+Y|\n)/);
     if (noDate) {
       out.sampleId = noDate[1];
       out.name = noDate[3].trim();
@@ -1394,14 +1569,23 @@ header.hero p {
   // with no label text in front of it to anchor on).
   var STOP = "(?=\\n|$|\\s{3,}:|\\b(?:PIN|DOB|Age|Gender|Sex|Ethnicity|Hospital|Clinic|Contact|Sample|Referring|Specimen|Date|Collection|Received|Report|Biopsy\\s*(?:Date|Performed)|Gestational|UHID)\\b|(?:W|S|D|C)\\/O\\b)";
 
-  function parseOcrText(text) {
+  function parseOcrText(text, srcKey) {
     var t = (text || "").replace(/\r/g, "");
     var out = {};
 
-    out.name = firstValidMatch(t, [
+    // Freedom screenshots are pure table — no label:value pairs in the OCR
+    // text, so label patterns find nothing. Run LIS table parsing first so
+    // the structured column data (name, sample ID, date) is already filled
+    // before the label pass runs; label patterns then act as fallbacks only.
+    if (srcKey === "freedom") {
+      var lisFirst = extractLisTableRow(t);
+      Object.keys(lisFirst).forEach(function (k) { if (lisFirst[k]) out[k] = lisFirst[k]; });
+    }
+
+    if (!out.name) out.name = firstValidMatch(t, [
       new RegExp("(?:patient\\s*name|full\\s*name)\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
     ], looksLikeRealName);
-    out.age = firstMatch(t, [
+    if (!out.age) out.age = firstMatch(t, [
       // \b before "age" matters: without it this also matches inside "Page"
       // (as in a "Page 1 of 6" footer), "Average", "Image", etc., since none
       // of those have a real word boundary before the "age" substring.
@@ -1415,24 +1599,24 @@ header.hero p {
       /(?:female|male)\s*\/\s*([0-9]{1,3}\s*(?:years?|yrs?|y)?)\b/i,
       /\d{1,2}\/\d{1,2}\/\d{2,4}\s*\/\s*([0-9]{1,3})\b/
     ]);
-    out.gender = firstMatch(t, [
+    if (!out.gender) out.gender = firstMatch(t, [
       /\b(?:gender|sex)\s*[:\-]?\s*(female|male|\bF\b|\bM\b)/i
     ]);
-    out.uhid = firstValidMatch(t, [
+    if (!out.uhid) out.uhid = firstValidMatch(t, [
       /\bPIN\s*[:\-]?\s*([A-Za-z0-9]+)/i,
       /\bUHID\s*[:\-]?\s*([A-Za-z0-9\-]+)/i
     ], isPlausibleId);
-    out.doctor = firstValidMatch(t, [
+    if (!out.doctor) out.doctor = firstValidMatch(t, [
       new RegExp("(?:referring\\s*clinician|referring\\s*doctor|clinical\\s*name|ref(?:erred)?\\s*by)\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
     ], looksLikeRealName);
-    out.hospital = firstValidMatch(t, [
+    if (!out.hospital) out.hospital = firstValidMatch(t, [
       new RegExp("hospital\\s*\\/?\\s*clinic\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i"),
       new RegExp("hospital\\s*[:\\-]?\\s*([^\\n]*?)" + STOP, "i")
     ], looksLikeRealName);
-    out.sampleId = firstValidMatch(t, [
+    if (!out.sampleId) out.sampleId = firstValidMatch(t, [
       /\b(?:sample\s*number|sample\s*no\.?|lab\s*no\.?|sin\s*no\.?)\s*[:\-]?\s*([A-Za-z0-9\-]+)/i
     ], isPlausibleId);
-    out.collectionDate = firstMatch(t, [
+    if (!out.collectionDate) out.collectionDate = firstMatch(t, [
       // "date" made optional: a two-column PDF layout can wrap a label like
       // "SAMPLE COLLECTION DATE" so "DATE" lands on the next visual line,
       // after the value has already been printed ("SAMPLE COLLECTION :
@@ -1563,23 +1747,36 @@ header.hero p {
     statusEl.innerHTML = '<span class="spinner"></span><span>Reading ' + escapeHtml(file.name) + '…</span>';
     detailsEl.hidden = true;
 
-    ocrFile(file).then(function (text) {
+    ocrFile(file, src.key).then(function (result) {
+      var text = result.text;
+      var canvas = result.canvas;
+
       ocrTextEl.textContent = text.trim() || "(no text found)";
       detailsEl.hidden = false;
 
-      var parsed = parseOcrText(text);
-      var filledCount = 0;
-      FIELDS.forEach(function (field) {
-        var value = parsed[field.key] || getTemplateDefault(currentTemplateKey, src.key, field.key);
-        if (value) {
-          document.getElementById(field.key + "-" + src.key).value = value;
-          filledCount++;
-        }
-      });
+      var parsed = parseOcrText(text, src.key);
 
-      statusEl.className = "upload-status";
-      statusEl.innerHTML = "<span>Scanned " + escapeHtml(file.name) + " — filled " + filledCount + " of " + FIELDS.length + " field(s). Check against the text below.</span>";
-      updateAll();
+      // TRF images get a second pass: the MNIST digit recognizer fills any
+      // numeric field (sampleId, age) that Tesseract left empty. Freedom and
+      // Report PDFs skip this — their text is either structured (Freedom) or
+      // born-digital (Report), so Tesseract already does well there.
+      var digitPass = (src.key === "trf" && canvas && window.tf)
+        ? recognizeTrfDigits(canvas, parsed)
+        : Promise.resolve(parsed);
+
+      digitPass.then(function (finalParsed) {
+        var filledCount = 0;
+        FIELDS.forEach(function (field) {
+          var value = finalParsed[field.key] || getTemplateDefault(currentTemplateKey, src.key, field.key);
+          if (value) {
+            document.getElementById(field.key + "-" + src.key).value = value;
+            filledCount++;
+          }
+        });
+        statusEl.className = "upload-status";
+        statusEl.innerHTML = "<span>Scanned " + escapeHtml(file.name) + " — filled " + filledCount + " of " + FIELDS.length + " field(s). Check against the text below.</span>";
+        updateAll();
+      });
     }).catch(function (err) {
       statusEl.className = "upload-status is-error";
       statusEl.textContent = "Could not read this file: " + (err && err.message ? err.message : err);
