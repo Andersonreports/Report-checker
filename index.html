@@ -484,8 +484,16 @@ header.hero p {
     if (s[0] === "f") return "female";
     return s;
   }
+  function normalizeName(str) {
+    // Strip honorific titles so "MRS.PAVITHRA" and "Pavithra" still match.
+    // Freedom OCR often prefixes names with MRS./MR./MS./DR. while the Report
+    // PDF omits them, causing a false mismatch without this strip.
+    return str.trim().toLowerCase()
+      .replace(/^(?:mrs?|ms|dr)[.\-]?\s*/i, "")
+      .replace(/\s+/g, " ");
+  }
   function normalizeDoctor(str) {
-    return str.trim().toLowerCase().replace(/^dr\.?\s*/, "").replace(/\s+/g, " ");
+    return str.trim().toLowerCase().replace(/^(?:mrs?|ms|dr)[.\-]?\s*/, "").replace(/\s+/g, " ");
   }
   function normalizeId(str) {
     return str.trim().toLowerCase().replace(/[\s-]+/g, "");
@@ -540,7 +548,7 @@ header.hero p {
   ];
 
   var COMMON_FIELDS = [
-    { key: "name", label: "Patient Name", placeholder: "e.g. Rajesh Kumar", normalize: normalizeText, fuzzyPrefix: true },
+    { key: "name", label: "Patient Name", placeholder: "e.g. Rajesh Kumar", normalize: normalizeName, fuzzyPrefix: true },
     { key: "age", label: "Age", placeholder: "e.g. 34", normalize: normalizeAge },
     { key: "gender", label: "Gender", placeholder: "e.g. Male", normalize: normalizeGender },
     { key: "uhid", label: "Patient ID / UHID", placeholder: "e.g. AD-00123456", normalize: normalizeId },
@@ -555,7 +563,7 @@ header.hero p {
   var TEMPLATE_EXTRA_FIELDS = {
     common: [],
     pgta: [
-      { key: "partnerName", label: "Partner's Name", placeholder: "e.g. Mr. Suresh Kumar", normalize: normalizeText },
+      { key: "partnerName", label: "Partner's Name", placeholder: "e.g. Mr. Suresh Kumar", normalize: normalizeName },
       { key: "specimenType", label: "Specimen Type", placeholder: "e.g. Day 5 Trophectoderm Biopsy", normalize: normalizeText },
       { key: "biopsyDate", label: "Biopsy Date", placeholder: "e.g. 27-08-2026", normalize: normalizeDate },
       { key: "receiptDate", label: "Sample Receipt Date", placeholder: "e.g. 01-09-2026", normalize: normalizeDate },
@@ -563,7 +571,7 @@ header.hero p {
       { key: "embryoIds", label: "Embryo ID(s)", placeholder: "e.g. PS1, PS2, PS3", normalize: normalizeIdList }
     ],
     qfpcr: [
-      { key: "partnerName", label: "Partner's Name", placeholder: "e.g. Mr. Suresh Kumar", normalize: normalizeText, fuzzyPrefix: true },
+      { key: "partnerName", label: "Partner's Name", placeholder: "e.g. Mr. Suresh Kumar", normalize: normalizeName, fuzzyPrefix: true },
       { key: "specimenType", label: "Specimen Type", placeholder: "e.g. Amniotic Fluid", normalize: normalizeText },
       { key: "gestationalAge", label: "Gestational Age", placeholder: "e.g. 23 Weeks / 1 Day", normalize: normalizeText },
       { key: "pregnancyType", label: "Pregnancy Type", placeholder: "e.g. Natural Pregnancy", normalize: normalizeText },
